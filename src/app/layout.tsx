@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Lilita_One } from "next/font/google";
+import { Oswald } from "next/font/google";
 import "./globals.css";
 import { identidade } from "@/config/identidade";
 import { Cabecalho } from "@/components/Cabecalho";
 
-// Letra grossa e arredondada, usada nos títulos e botões.
-const fonteTitulo = Lilita_One({
-  weight: "400",
+// Letra condensada de letreiro antigo (parecida com a do logo),
+// usada nos títulos, botões e menu.
+const fonteTitulo = Oswald({
   subsets: ["latin"],
   display: "swap",
   variable: "--fonte-titulo",
@@ -22,8 +22,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   const estilo = {
     "--cor-principal": identidade.corPrincipal,
     "--cor-secundaria": identidade.corSecundaria,
-    "--cor-destaque": identidade.corDestaque,
-    "--cor-texto-destaque": identidade.corTextoDestaque,
+    "--cor-detalhe": identidade.corDetalhe,
+    "--cor-texto-claro": identidade.corTextoClaro,
   } as React.CSSProperties;
 
   return (

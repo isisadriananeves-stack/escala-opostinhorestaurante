@@ -10,8 +10,13 @@ export function Cabecalho() {
   const caminho = usePathname();
   return (
     <header
-      className="sticky top-0 z-10 border-b-4 text-white shadow-md"
-      style={{ background: "var(--cor-principal)", borderColor: "var(--cor-destaque)" }}
+      className="sticky top-0 z-10 shadow-md"
+      style={{
+        background: "var(--cor-principal)",
+        color: "var(--cor-texto-claro)",
+        // Friso duplo fino dourado embaixo, como nos rótulos antigos.
+        borderBottom: "4px double var(--cor-detalhe)",
+      }}
     >
       <Link
         href="/"
@@ -24,10 +29,11 @@ export function Cabecalho() {
             width={52}
             height={52}
             priority
-            className="h-[52px] w-[52px] shrink-0 rounded-full bg-[#F7EDD8] ring-2 ring-[color:var(--cor-destaque)]"
+            className="h-[52px] w-[52px] shrink-0 rounded-full ring-2 ring-[color:var(--cor-detalhe)]"
+            style={{ background: "var(--cor-secundaria)" }}
           />
         ) : null}
-        <span className="titulo text-2xl leading-tight" style={{ color: "#FFF6E3" }}>
+        <span className="titulo text-2xl leading-tight tracking-wide">
           {identidade.nome}
         </span>
       </Link>
@@ -39,12 +45,12 @@ export function Cabecalho() {
               key={item.href}
               href={item.href}
               aria-current={ativo ? "page" : undefined}
-              className={`titulo whitespace-nowrap rounded-full px-3 py-2 text-base sm:px-4 ${
-                ativo ? "" : "text-[#FFF6E3] active:bg-white/15"
+              className={`rotulo whitespace-nowrap rounded-full px-3 py-2 text-sm sm:px-4 ${
+                ativo ? "" : "active:bg-white/15"
               }`}
               style={
                 ativo
-                  ? { background: "var(--cor-destaque)", color: "var(--cor-texto-destaque)" }
+                  ? { background: "var(--cor-secundaria)", color: "var(--cor-principal)" }
                   : undefined
               }
             >

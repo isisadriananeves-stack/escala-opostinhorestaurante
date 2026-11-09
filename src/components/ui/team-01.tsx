@@ -107,11 +107,13 @@ export default function Team01({
               style={{ animationDelay: `${Math.min(indice, 11) * 0.1}s` }}
             >
               <div
-                className="titulo flex aspect-square w-full max-w-[120px] items-center justify-center rounded-full border-4 text-4xl"
+                className="titulo flex aspect-square w-full max-w-[120px] items-center justify-center rounded-full text-4xl"
                 style={{
-                  background: "var(--cor-destaque)",
-                  color: "var(--cor-texto-destaque)",
-                  borderColor: "var(--cor-principal)",
+                  // Selo com anel duplo, como o do logo.
+                  background: "var(--cor-secundaria)",
+                  color: "var(--cor-principal)",
+                  border: "5px double var(--cor-principal)",
+                  boxShadow: "0 0 0 3px var(--cor-cartao), 0 0 0 4px var(--cor-detalhe)",
                 }}
                 aria-hidden
               >
@@ -130,7 +132,7 @@ export default function Team01({
                   style={{
                     borderColor: "var(--cor-principal)",
                     color: "var(--cor-principal)",
-                    background: "#fffaf0",
+                    background: "var(--cor-cartao)",
                   }}
                   aria-label={`Ligar para ${pessoa.nome}`}
                 >

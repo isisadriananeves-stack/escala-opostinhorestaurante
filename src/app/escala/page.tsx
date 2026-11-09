@@ -275,7 +275,7 @@ export default function EscalaDaSemana() {
                             onClick={() => setCelula({ data: dia, turno })}
                             className={`flex min-h-[96px] w-full flex-col items-stretch gap-1 rounded-xl p-2 text-left ${
                               comAlerta
-                                ? "border-2 border-red-500 bg-red-50 active:bg-red-100"
+                                ? "border-2 border-red-600 bg-red-50 active:bg-red-100"
                                 : "border border-dashed border-neutral-300 active:bg-neutral-100"
                             }`}
                             aria-label={`${turno.nome}, ${rotuloDia(dia)}: ${
@@ -351,7 +351,7 @@ function ResumoAlertas({ resultado }: { resultado: ResultadoAlertas }) {
   const total = alertas.length;
   return (
     <section
-      className={`cartao ${total > 0 ? "border-red-300 bg-red-50!" : "border-green-300 bg-green-50!"}`}
+      className={`cartao ${total > 0 ? "border-red-300 bg-red-50! shadow-none!" : "border-green-300 bg-green-50! shadow-none!"}`}
       aria-live="polite"
     >
       {total === 0 ? (
