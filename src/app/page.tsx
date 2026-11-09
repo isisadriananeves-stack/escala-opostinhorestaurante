@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { identidade } from "@/config/identidade";
@@ -38,9 +39,19 @@ export default function Inicio() {
 
   return (
     <div className="space-y-5">
-      <section className="cartao space-y-4">
+      <section className="cartao space-y-4 text-center">
+        {identidade.logo && (
+          <Image
+            src={identidade.logo}
+            alt={`Logo ${identidade.nome}`}
+            width={176}
+            height={176}
+            priority
+            className="mx-auto h-44 w-44"
+          />
+        )}
         <div>
-          <h1 className="text-2xl font-bold">{identidade.nome}</h1>
+          <h1 className="text-3xl">{identidade.nome}</h1>
           <p className="mt-1 text-neutral-700">Escala de funcionários. O que você quer fazer?</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">

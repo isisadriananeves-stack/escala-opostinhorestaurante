@@ -2,14 +2,18 @@
 
 /* Cores vêm de src/config/identidade.ts e são aplicadas no layout. */
 :root {
-  --cor-principal: #1f3a5f;
-  --cor-secundaria: #f4f1ea;
-  --cor-texto: #1a1a1a;
+  --cor-principal: #6b1e0a;
+  --cor-secundaria: #f7edd8;
+  --cor-destaque: #f4b400;
+  --cor-texto-destaque: #3b1205;
+  --cor-texto: #2b1206;
+  --cor-borda: #e6d2b0;
 }
 
 @theme inline {
   --color-principal: var(--cor-principal);
   --color-secundaria: var(--cor-secundaria);
+  --color-destaque: var(--cor-destaque);
 }
 
 html,
@@ -20,20 +24,43 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Títulos com a letra da marca (só existe no peso normal). */
+h1,
+h2,
+.titulo {
+  font-family: var(--fonte-titulo), system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+h1,
+h2 {
+  color: var(--cor-principal);
+}
+
 /* Botões e campos grandes, pensados para o celular. */
 .botao {
-  @apply inline-flex items-center justify-center rounded-xl px-4 py-3 text-base font-semibold text-white shadow-sm active:scale-[0.98] disabled:opacity-50;
-  background: var(--cor-principal);
+  @apply inline-flex items-center justify-center rounded-full px-5 py-3 text-lg shadow-sm active:scale-[0.98] disabled:opacity-50;
+  font-family: var(--fonte-titulo), system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  background: var(--cor-destaque);
+  color: var(--cor-texto-destaque);
 }
 .botao-secundario {
-  @apply inline-flex items-center justify-center rounded-xl border px-4 py-3 text-base font-semibold shadow-sm active:scale-[0.98] disabled:opacity-50;
+  @apply inline-flex items-center justify-center rounded-full border-2 px-5 py-3 text-lg shadow-sm active:scale-[0.98] disabled:opacity-50;
+  font-family: var(--fonte-titulo), system-ui, sans-serif;
+  letter-spacing: 0.02em;
   border-color: var(--cor-principal);
   color: var(--cor-principal);
-  background: white;
+  background: #fffaf0;
 }
 .campo {
-  @apply w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-base outline-none focus:border-neutral-500;
+  @apply w-full rounded-2xl border-2 bg-white px-4 py-3 text-base outline-none;
+  border-color: var(--cor-borda);
+}
+.campo:focus {
+  border-color: var(--cor-principal);
 }
 .cartao {
-  @apply rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm;
+  @apply rounded-3xl border-2 bg-white p-4 shadow-sm;
+  border-color: var(--cor-borda);
 }

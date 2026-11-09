@@ -231,19 +231,19 @@ export default function EscalaDaSemana() {
             <table className="w-full border-separate border-spacing-0 text-left">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-[1] min-w-[92px] border-b border-r border-neutral-200 bg-white p-2 text-sm font-semibold">
+                  <th className="titulo sticky left-0 z-[1] min-w-[92px] border-b border-r border-neutral-200 bg-white p-2 text-base">
                     Turno
                   </th>
                   {dias.map((dia) => (
                     <th
                       key={dia}
-                      className={`min-w-[112px] border-b border-neutral-200 p-2 text-center text-sm font-semibold ${
+                      className={`titulo min-w-[112px] border-b border-neutral-200 p-2 text-center text-base ${
                         dia === hoje ? "bg-amber-50" : ""
                       }`}
                     >
                       {rotuloDia(dia)}
                       {dia === hoje && (
-                        <span className="block text-xs font-normal text-amber-700">hoje</span>
+                        <span className="block font-sans text-xs font-semibold text-amber-700">hoje</span>
                       )}
                     </th>
                   ))}
@@ -253,7 +253,7 @@ export default function EscalaDaSemana() {
                 {turnos.map((turno) => (
                   <tr key={turno.id}>
                     <th className="sticky left-0 z-[1] border-b border-r border-neutral-200 bg-white p-2 align-top">
-                      <span className="block font-semibold">{turno.nome}</span>
+                      <span className="titulo block text-lg">{turno.nome}</span>
                       <span className="block text-xs font-normal text-neutral-600">
                         {horaCurta(turno.hora_inicio)} às {horaCurta(turno.hora_fim)}
                       </span>
@@ -453,7 +453,7 @@ function EscolherEquipe({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-neutral-200 p-4">
-          <p className="text-lg font-bold">
+          <p className="titulo text-xl" style={{ color: "var(--cor-principal)" }}>
             {celula.turno.nome} · {rotuloDia(celula.data)}
           </p>
           <p className="text-sm text-neutral-600">
