@@ -49,3 +49,25 @@ export const FUNCOES_PADRAO = [
   "Entregador",
   "Gerência",
 ];
+
+// Marcação de ponto de um dia, já no formato interno do sistema
+// (o adaptador em src/lib/integracoes/ponto.ts converte o formato do fornecedor).
+export type MarcacaoPonto = {
+  cpf: string; // só dígitos
+  data: string; // "2026-11-04"
+  entrada: string | null; // "10:55"
+  saidaIntervalo: string | null;
+  voltaIntervalo: string | null;
+  saida: string | null;
+};
+
+// Resposta da rota /api/ponto/marcacoes.
+export type RespostaMarcacoes = {
+  fonte: "api" | "exemplo";
+  marcacoes: MarcacaoPonto[];
+  // Motivo de não ter usado a API (quando fonte = "exemplo").
+  aviso: string | null;
+  // false quando a API falhou e os dados de exemplo não cobrem a data.
+  temDados: boolean;
+  datasDeExemplo: string[];
+};

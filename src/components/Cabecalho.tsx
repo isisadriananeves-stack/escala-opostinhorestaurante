@@ -37,7 +37,7 @@ export function Cabecalho() {
           {identidade.nome}
         </span>
       </Link>
-      <nav className="mx-auto flex max-w-3xl gap-1 overflow-x-auto px-2 pb-3 sm:gap-2 sm:px-3">
+      <nav className="mx-auto flex max-w-3xl flex-wrap gap-1 px-2 pb-3 sm:gap-2 sm:px-3">
         {menu.map((item) => {
           const ativo = caminho === item.href;
           return (

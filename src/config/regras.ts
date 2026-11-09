@@ -41,6 +41,13 @@ export type RegrasDaCasa = {
     turnoQueFecha: string;
     turnoQueAbre: string;
   };
+  // Conferência do dia (escala x ponto).
+  conferencia: {
+    // Entrada até X minutos depois do início do turno ainda conta como "No horário".
+    toleranciaAtrasoMinutos: number;
+    // Saída mais de X minutos depois do fim do turno conta como "Hora extra".
+    horaExtraMinutos: number;
+  };
 };
 
 export const REGRAS: RegrasDaCasa = {
@@ -94,5 +101,9 @@ export const REGRAS: RegrasDaCasa = {
     proibido: true,
     turnoQueFecha: "Jantar",
     turnoQueAbre: "Almoço",
+  },
+  conferencia: {
+    toleranciaAtrasoMinutos: 10,
+    horaExtraMinutos: 30,
   },
 };

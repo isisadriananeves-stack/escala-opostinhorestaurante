@@ -11,6 +11,7 @@ type Formulario = {
   nome: string;
   funcao: string;
   telefone: string;
+  cpf: string;
   sexo: "" | "F" | "M";
 };
 
@@ -18,8 +19,15 @@ const FORMULARIO_VAZIO: Formulario = {
   nome: "",
   funcao: FUNCOES_PADRAO[0],
   telefone: "",
+  cpf: "",
   sexo: "",
 };
+
+/** "12345678901" -> "123.456.789-01" (deixa como está se não tiver 11 dígitos). */
+function formatarCpf(cpf: string | null): string {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : d;
+}
 
 const ROTULO_SEXO = { F: "Feminino", M: "Masculino" } as const;
 
@@ -79,6 +87,7 @@ export default function Equipe() {
       nome: f.nome,
       funcao: f.funcao,
       telefone: f.telefone ?? "",
+      cpf: formatarCpf(f.cpf),
       sexo: f.sexo ?? "",
     });
     // O formulário fica no topo da tela: rola até ele.
@@ -99,6 +108,11 @@ export default function Equipe() {
       setAviso("Escolha a função.");
       return;
     }
+    const cpf = formulario.cpf.replace(/\D/g, "");
+    if (cpf && cpf.length !== 11) {
+      setAviso("O CPF precisa ter 11 números.");
+      return;
+    }
     setSalvando(true);
     setAviso(null);
     try {
@@ -106,6 +120,7 @@ export default function Equipe() {
         nome,
         funcao,
         telefone: telefone || null,
+        cpf: cpf || null,
         sexo: formulario.sexo || null,
       };
       const db = supabase().from("funcionarios");
@@ -116,7 +131,12 @@ export default function Equipe() {
       setFormulario(null);
       await carregar();
     } catch (e) {
-      setAviso(`Não foi possível salvar. ${mensagemDeErro(e)}`);
+      const codigo = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+      setAviso(
+        codigo === "23505"
+          ? "Este CPF já está cadastrado para outro funcionário."
+          : `Não foi possível salvar. ${mensagemDeErro(e)}`,
+      );
     } finally {
       setSalvando(false);
     }
@@ -191,6 +211,22 @@ export default function Equipe() {
               placeholder="(11) 90000-0000"
               value={formulario.telefone}
               onChange={(e) => setFormulario({ ...formulario, telefone: e.target.value })}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block font-medium">CPF</span>
+            <span className="mb-2 block text-sm text-neutral-600">
+              Usado para ligar o funcionário às marcações do ponto.
+            </span>
+            <input
+              className="campo"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="000.000.000-00"
+              maxLength={14}
+              value={formulario.cpf}
+              onChange={(e) => setFormulario({ ...formulario, cpf: e.target.value })}
+              onBlur={() => setFormulario({ ...formulario, cpf: formatarCpf(formulario.cpf) })}
             />
           </label>
           <fieldset>
