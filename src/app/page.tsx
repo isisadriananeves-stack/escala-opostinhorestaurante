@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { identidade } from "@/config/identidade";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
+import type { Funcionario } from "@/lib/tipos";
+import Team01 from "@/components/ui/team-01";
 
 type Estado =
   | { tipo: "carregando" }
@@ -14,6 +16,8 @@ type Estado =
 
 export default function Inicio() {
   const [estado, setEstado] = useState<Estado>({ tipo: "carregando" });
+  // Funcionários ativos, mostrados na vitrine da equipe.
+  const [equipe, setEquipe] = useState<Funcionario[]>([]);
 
   useEffect(() => {
     async function verificar() {
@@ -23,12 +27,20 @@ export default function Inicio() {
       }
       try {
         const db = supabase();
-        const [f, t] = await Promise.all([
+        const [f, t, ativos] = await Promise.all([
           db.from("funcionarios").select("id", { count: "exact", head: true }),
           db.from("turnos").select("id", { count: "exact", head: true }),
+          db
+            .from("funcionarios")
+            .select("*")
+            .eq("ativo", true)
+            .order("funcao")
+            .order("nome"),
         ]);
         if (f.error) throw f.error;
         if (t.error) throw t.error;
+        // A vitrine é só enfeite: se falhar, a tela continua funcionando sem ela.
+        if (!ativos.error) setEquipe(ativos.data ?? []);
         setEstado({ tipo: "ok", funcionarios: f.count ?? 0, turnos: t.count ?? 0 });
       } catch (e) {
         setEstado({ tipo: "erro", mensagem: e instanceof Error ? e.message : String(e) });
@@ -63,6 +75,8 @@ export default function Inicio() {
           </Link>
         </div>
       </section>
+
+      {equipe.length > 0 && <Team01 pessoas={equipe} />}
 
       <section className="cartao">
         <h2 className="text-lg font-semibold">Conexão com o banco de dados</h2>
