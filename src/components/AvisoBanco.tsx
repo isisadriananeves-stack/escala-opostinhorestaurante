@@ -12,7 +12,7 @@ export function AvisoSemVariaveis() {
 
 export function AvisoErro({ mensagem }: { mensagem: string }) {
   return (
-    <div className="cartao border-red-300 bg-red-50 text-red-800" role="alert">
+    <div className="cartao border-red-300 bg-red-50! text-red-800" role="alert">
       Não foi possível falar com o banco de dados. Tente de novo em instantes.
       <span className="mt-1 block text-sm text-red-700">Detalhe: {mensagem}</span>
     </div>

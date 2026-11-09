@@ -11,14 +11,22 @@ type Formulario = {
   nome: string;
   funcao: string;
   telefone: string;
+  sexo: "" | "F" | "M";
 };
 
-const FORMULARIO_VAZIO: Formulario = { nome: "", funcao: FUNCOES_PADRAO[0], telefone: "" };
+const FORMULARIO_VAZIO: Formulario = {
+  nome: "",
+  funcao: FUNCOES_PADRAO[0],
+  telefone: "",
+  sexo: "",
+};
+
+const ROTULO_SEXO = { F: "Feminino", M: "Masculino" } as const;
 
 async function buscarFuncionarios(): Promise<Funcionario[]> {
   const { data, error } = await supabase()
     .from("funcionarios")
-    .select("id, nome, funcao, telefone, cpf, ativo")
+    .select("*")
     .order("nome");
   if (error) throw error;
   return data ?? [];
@@ -66,7 +74,13 @@ export default function Equipe() {
 
   function abrirEdicao(f: Funcionario) {
     setAviso(null);
-    setFormulario({ id: f.id, nome: f.nome, funcao: f.funcao, telefone: f.telefone ?? "" });
+    setFormulario({
+      id: f.id,
+      nome: f.nome,
+      funcao: f.funcao,
+      telefone: f.telefone ?? "",
+      sexo: f.sexo ?? "",
+    });
     // O formulário fica no topo da tela: rola até ele.
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -88,7 +102,12 @@ export default function Equipe() {
     setSalvando(true);
     setAviso(null);
     try {
-      const dados = { nome, funcao, telefone: telefone || null };
+      const dados = {
+        nome,
+        funcao,
+        telefone: telefone || null,
+        sexo: formulario.sexo || null,
+      };
       const db = supabase().from("funcionarios");
       const { error } = formulario.id
         ? await db.update(dados).eq("id", formulario.id)
@@ -174,6 +193,28 @@ export default function Equipe() {
               onChange={(e) => setFormulario({ ...formulario, telefone: e.target.value })}
             />
           </label>
+          <fieldset>
+            <legend className="mb-1 font-medium">Sexo</legend>
+            <p className="mb-2 text-sm text-neutral-600">Usado na regra de folga aos domingos.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {(["F", "M"] as const).map((valor) => {
+                const marcado = formulario.sexo === valor;
+                return (
+                  <button
+                    key={valor}
+                    type="button"
+                    aria-pressed={marcado}
+                    className={marcado ? "botao" : "botao-secundario"}
+                    onClick={() =>
+                      setFormulario({ ...formulario, sexo: marcado ? "" : valor })
+                    }
+                  >
+                    {ROTULO_SEXO[valor]}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
           {aviso && (
             <p className="text-red-700" role="alert">
               {aviso}
@@ -268,7 +309,14 @@ function CartaoFuncionario({ funcionario }: { funcionario: Funcionario }) {
   return (
     <div>
       <p className="text-lg font-semibold">{funcionario.nome}</p>
-      <p className="text-neutral-700">{funcionario.funcao}</p>
+      <p className="text-neutral-700">
+        {funcionario.funcao}
+        {funcionario.sexo ? (
+          <span className="text-neutral-500"> · {ROTULO_SEXO[funcionario.sexo]}</span>
+        ) : (
+          <span className="text-amber-700"> · sexo não informado</span>
+        )}
+      </p>
       {funcionario.telefone ? (
         <a
           href={`tel:${funcionario.telefone.replace(/[^\d+]/g, "")}`}

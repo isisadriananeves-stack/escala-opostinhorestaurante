@@ -7,6 +7,8 @@ export type Funcionario = {
   telefone: string | null;
   cpf: string | null;
   ativo: boolean;
+  // "F" = feminino, "M" = masculino, null = não informado (usado na regra dos domingos)
+  sexo?: "F" | "M" | null;
 };
 
 export type Turno = {
@@ -40,6 +42,8 @@ export type Configuracao = {
 export const FUNCOES_PADRAO = [
   "Salão",
   "Cozinha",
+  "Chapa",
+  "Copa",
   "Caixa",
   "Bar",
   "Entregador",

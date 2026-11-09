@@ -13,18 +13,31 @@ import {
   somarDias,
 } from "@/lib/datas";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
+import { REGRAS } from "@/config/regras";
+import {
+  calcularAlertas,
+  chaveCelula,
+  conferirMinimo,
+  periodoParaConferir,
+  regraDoQuadro,
+  type Alerta,
+  type ResultadoAlertas,
+} from "@/lib/alertas";
 
 // Célula aberta para escolher quem trabalha.
 type CelulaAberta = { data: string; turno: Turno };
 
 const CAMPOS_ESCALA = "id, data, turno_id, funcionario_id";
 
+// Carrega a semana e os dias ao redor que as regras precisam
+// (domingo anterior, segunda seguinte e os domingos do mês).
 async function buscarEscalas(segunda: string): Promise<Escala[]> {
+  const { inicio, fim } = periodoParaConferir(segunda);
   const { data, error } = await supabase()
     .from("escalas")
     .select(CAMPOS_ESCALA)
-    .gte("data", segunda)
-    .lte("data", somarDias(segunda, 6));
+    .gte("data", inicio)
+    .lte("data", fim);
   if (error) throw error;
   return data ?? [];
 }
@@ -64,7 +77,7 @@ export default function EscalaDaSemana() {
           db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
           db
             .from("funcionarios")
-            .select("id, nome, funcao, telefone, cpf, ativo")
+            .select("*")
             .order("funcao")
             .order("nome"),
         ]);
@@ -151,6 +164,11 @@ export default function EscalaDaSemana() {
 
   if (semVariaveis) return <AvisoSemVariaveis />;
 
+  const resultado: ResultadoAlertas | null =
+    segunda && !carregando
+      ? calcularAlertas({ regras: REGRAS, segunda, turnos, funcionarios, escalas })
+      : null;
+
   const tituloSemana = segunda
     ? `${diaMes(segunda)} a ${diaMes(somarDias(segunda, 6))}`
     : "";
@@ -193,6 +211,8 @@ export default function EscalaDaSemana() {
       </div>
 
       {erro && <AvisoErro mensagem={erro} />}
+
+      {resultado && turnos.length > 0 && <ResumoAlertas resultado={resultado} />}
 
       {turnos.length === 0 && !carregando && !erro ? (
         <p className="cartao text-neutral-600">
@@ -240,6 +260,9 @@ export default function EscalaDaSemana() {
                     </th>
                     {dias.map((dia) => {
                       const escalados = escaladosNa(dia, turno.id);
+                      const alertasDoQuadro =
+                        resultado?.porCelula.get(chaveCelula(dia, turno.id)) ?? [];
+                      const comAlerta = alertasDoQuadro.length > 0;
                       return (
                         <td
                           key={dia}
@@ -250,13 +273,32 @@ export default function EscalaDaSemana() {
                           <button
                             type="button"
                             onClick={() => setCelula({ data: dia, turno })}
-                            className="flex min-h-[96px] w-full flex-col items-stretch gap-1 rounded-xl border border-dashed border-neutral-300 p-2 text-left active:bg-neutral-100"
+                            className={`flex min-h-[96px] w-full flex-col items-stretch gap-1 rounded-xl p-2 text-left ${
+                              comAlerta
+                                ? "border-2 border-red-500 bg-red-50 active:bg-red-100"
+                                : "border border-dashed border-neutral-300 active:bg-neutral-100"
+                            }`}
                             aria-label={`${turno.nome}, ${rotuloDia(dia)}: ${
                               escalados.length
-                            } pessoas. Tocar para escolher.`}
+                            } pessoas${
+                              comAlerta ? `, ${alertasDoQuadro.length} alertas` : ""
+                            }. Tocar para escolher.`}
                           >
+                            {comAlerta && (
+                              <span className="space-y-0.5 text-xs font-semibold leading-snug text-red-700">
+                                {alertasDoQuadro.map((a, i) => (
+                                  <span key={i} className="block">
+                                    ⚠ {a.curto}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
                             {escalados.length === 0 ? (
-                              <span className="m-auto text-sm text-neutral-500">
+                              <span
+                                className={`m-auto text-sm ${
+                                  comAlerta ? "text-red-700" : "text-neutral-500"
+                                }`}
+                              >
                                 + Escolher
                               </span>
                             ) : (
@@ -292,6 +334,7 @@ export default function EscalaDaSemana() {
           celula={celula}
           funcionarios={funcionarios}
           escalados={escaladosNa(celula.data, celula.turno.id)}
+          alertas={resultado?.porCelula.get(chaveCelula(celula.data, celula.turno.id)) ?? []}
           salvandoId={salvandoId}
           erro={erro}
           onAlternar={(f) => alternar(f, celula.data, celula.turno.id)}
@@ -301,6 +344,56 @@ export default function EscalaDaSemana() {
     </div>
   );
 }
+
+// Resumo no topo da grade: quantos alertas a semana tem, com a lista ao tocar.
+function ResumoAlertas({ resultado }: { resultado: ResultadoAlertas }) {
+  const { alertas, semSexo } = resultado;
+  const total = alertas.length;
+  return (
+    <section
+      className={`cartao ${total > 0 ? "border-red-300 bg-red-50!" : "border-green-300 bg-green-50!"}`}
+      aria-live="polite"
+    >
+      {total === 0 ? (
+        <p className="text-lg font-semibold text-green-800">✓ Nenhum alerta nesta semana</p>
+      ) : (
+        <details>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-1">
+            <span className="text-lg font-semibold text-red-800">
+              ⚠ {total} {total === 1 ? "alerta" : "alertas"} nesta semana
+            </span>
+            <span className="shrink-0 text-sm font-semibold text-red-800 underline">
+              Ver lista
+            </span>
+          </summary>
+          <ul className="mt-3 space-y-2">
+            {alertas.map((a, i) => (
+              <li key={i} className="flex gap-2 text-sm text-red-900">
+                <span aria-hidden>•</span>
+                <span>
+                  <span className="font-semibold">{ROTULO_TIPO[a.tipo]}:</span> {a.texto}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {semSexo.length > 0 && (
+        <p className="mt-2 text-sm text-amber-800">
+          Regra dos domingos não conferida para quem está sem sexo cadastrado:{" "}
+          {semSexo.map((f) => f.nome).join(", ")}. Ajuste na tela Equipe.
+        </p>
+      )}
+    </section>
+  );
+}
+
+const ROTULO_TIPO: Record<Alerta["tipo"], string> = {
+  minimo: "Falta gente",
+  "fechar-abrir": "Fecha e abre",
+  folga: "Folga",
+  domingo: "Domingo",
+};
 
 function primeiroNome(nome: string): string {
   const partes = nome.trim().split(/\s+/);
@@ -312,6 +405,7 @@ function EscolherEquipe({
   celula,
   funcionarios,
   escalados,
+  alertas,
   salvandoId,
   erro,
   onAlternar,
@@ -320,6 +414,7 @@ function EscolherEquipe({
   celula: CelulaAberta;
   funcionarios: Funcionario[];
   escalados: Funcionario[];
+  alertas: Alerta[];
   salvandoId: string | null;
   erro: string | null;
   onAlternar: (f: Funcionario) => void;
@@ -329,6 +424,8 @@ function EscolherEquipe({
   // Mostra os ativos e também quem está desativado mas já estava escalado aqui,
   // para poder tirar da escala.
   const lista = funcionarios.filter((f) => f.ativo || idsEscalados.has(f.id));
+  const regra = regraDoQuadro(REGRAS, celula.turno, celula.data);
+  const contagem = regra ? conferirMinimo(regra, escalados) : [];
 
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
@@ -365,7 +462,37 @@ function EscolherEquipe({
           </p>
         </div>
 
-        <ul className="flex-1 overflow-y-auto p-2">
+        <div className="flex-1 overflow-y-auto">
+        {(regra || alertas.length > 0) && (
+          <div className="space-y-2 border-b border-neutral-200 p-4">
+            {alertas.map((a, i) => (
+              <p key={i} className="text-sm font-semibold text-red-700">
+                ⚠ {a.texto}
+              </p>
+            ))}
+            {regra && (
+              <div>
+                <p className="text-sm font-semibold text-neutral-700">
+                  Mínimo ({regra.descricao})
+                </p>
+                <ul className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                  {contagem.map((c) => {
+                    const ok = c.tem >= c.minimo;
+                    return (
+                      <li key={c.funcao} className={ok ? "text-green-800" : "text-red-700"}>
+                        {ok ? "✓" : "✗"} {c.funcao}: {c.tem}/{c.minimo}
+                        {c.observacao && (
+                          <span className="block text-xs text-neutral-500">{c.observacao}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        <ul className="p-2">
           {lista.length === 0 && (
             <li className="p-3 text-neutral-600">
               Nenhum funcionário ativo. Cadastre na tela Equipe.
@@ -404,6 +531,7 @@ function EscolherEquipe({
             );
           })}
         </ul>
+        </div>
 
         {erro && (
           <p className="px-4 pb-2 text-sm text-red-700" role="alert">
