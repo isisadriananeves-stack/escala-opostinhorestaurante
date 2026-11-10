@@ -5,9 +5,11 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { identidade } from "@/config/identidade";
 import { menu } from "@/config/menu";
+import { useSessao } from "@/components/Portao";
 
 export function Cabecalho() {
   const caminho = usePathname();
+  const sessao = useSessao();
   return (
     <header
       className="sticky top-0 z-10 shadow-md"
@@ -18,10 +20,8 @@ export function Cabecalho() {
         borderBottom: "4px double var(--cor-detalhe)",
       }}
     >
-      <Link
-        href="/"
-        className="mx-auto flex max-w-3xl items-center gap-3 px-4 pt-3 pb-2"
-      >
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-3 pb-2">
+      <Link href="/" className="flex min-w-0 items-center gap-3">
         {identidade.logo ? (
           <Image
             src={identidade.logo}
@@ -37,6 +37,18 @@ export function Cabecalho() {
           {identidade.nome}
         </span>
       </Link>
+      {sessao && (
+        <button
+          type="button"
+          onClick={sessao.sair}
+          className="rotulo shrink-0 rounded-full border px-3 py-2 text-xs active:bg-white/15"
+          style={{ borderColor: "var(--cor-texto-claro)" }}
+          title={sessao.email ? `Conectado como ${sessao.email}` : undefined}
+        >
+          Sair
+        </button>
+      )}
+      </div>
       <nav className="mx-auto flex max-w-3xl flex-wrap gap-1 px-2 pb-3 sm:gap-2 sm:px-3">
         {menu.map((item) => {
           const ativo = caminho === item.href;

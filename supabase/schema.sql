@@ -16,6 +16,8 @@ create table if not exists funcionarios (
   ativo boolean not null default true,
   criado_em timestamptz not null default now()
 );
+-- Sexo (F/M), usado na regra de folga aos domingos
+alter table funcionarios add column if not exists sexo text check (sexo in ('F', 'M'));
 
 -- Turnos de trabalho (ex.: Almoço, Jantar)
 create table if not exists turnos (
@@ -54,8 +56,8 @@ create table if not exists configuracoes (
 );
 
 -- ---------------------------------------------------------------------
--- Acesso: liberado para a chave pública (anon). O app ainda não tem login.
--- Quando adicionar login, troque estas políticas por regras por usuário.
+-- Acesso: só quem fez login E está na lista usuarios_autorizados.
+-- Sem login, o banco não mostra nem altera nada.
 -- ---------------------------------------------------------------------
 alter table funcionarios enable row level security;
 alter table turnos enable row level security;
@@ -63,17 +65,34 @@ alter table escalas enable row level security;
 alter table regras enable row level security;
 alter table configuracoes enable row level security;
 
-drop policy if exists "acesso aberto" on funcionarios;
-drop policy if exists "acesso aberto" on turnos;
-drop policy if exists "acesso aberto" on escalas;
-drop policy if exists "acesso aberto" on regras;
-drop policy if exists "acesso aberto" on configuracoes;
+-- Lista de e-mails que podem usar o sistema.
+-- Sem regras de acesso: só é lida e alterada aqui no SQL Editor.
+create table if not exists usuarios_autorizados (email text primary key);
+alter table usuarios_autorizados enable row level security;
+-- Para liberar alguém (crie antes o usuário em Authentication > Users):
+-- insert into usuarios_autorizados (email) values (lower('email@exemplo.com'));
 
-create policy "acesso aberto" on funcionarios for all using (true) with check (true);
-create policy "acesso aberto" on turnos for all using (true) with check (true);
-create policy "acesso aberto" on escalas for all using (true) with check (true);
-create policy "acesso aberto" on regras for all using (true) with check (true);
-create policy "acesso aberto" on configuracoes for all using (true) with check (true);
+-- Pergunta ao banco: "quem está logado está na lista?"
+create or replace function usuario_autorizado() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from usuarios_autorizados
+    where email = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+$$;
+revoke all on function usuario_autorizado() from public, anon;
+grant execute on function usuario_autorizado() to authenticated;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['funcionarios','turnos','escalas','regras','configuracoes'] loop
+    execute format('drop policy if exists "acesso aberto" on %I', t);
+    execute format('drop policy if exists "equipe autorizada" on %I', t);
+    execute format('create policy "equipe autorizada" on %I for all to authenticated
+                    using (usuario_autorizado()) with check (usuario_autorizado())', t);
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- Dados de exemplo (restaurante fictício Vila Tempero)

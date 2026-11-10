@@ -6,7 +6,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // A chave pode vir com o nome antigo (ANON_KEY) ou com o nome novo que o
 // Supabase mostra no botão "Connect" (PUBLISHABLE_KEY). Os dois funcionam.
 
-function chavePublica(): string | undefined {
+export function chavePublica(): string | undefined {
   return (
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY

@@ -2,13 +2,20 @@
 // Busca as marcações do dia na API de ponto (no servidor, com as credenciais
 // das variáveis de ambiente). Se a API falhar, devolve os dados de exemplo
 // e o motivo, para a tela avisar em vez de quebrar.
+// Só responde para quem está conectado e liberado (veja src/lib/login-servidor.ts).
 
 import { ErroPonto, buscarMarcacoesDoDia, marcacoesDeExemplo } from "@/lib/integracoes/ponto";
+import { conferirLogin } from "@/lib/login-servidor";
 import type { RespostaMarcacoes } from "@/lib/tipos";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const login = await conferirLogin(request);
+  if (!login.ok) {
+    return Response.json({ erro: login.erro }, { status: login.status });
+  }
+
   const data = new URL(request.url).searchParams.get("data") ?? "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
     return Response.json({ erro: "Data inválida. Use o formato AAAA-MM-DD." }, { status: 400 });

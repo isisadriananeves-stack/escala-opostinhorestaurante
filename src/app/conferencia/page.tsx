@@ -47,8 +47,23 @@ async function buscarEscalasDoDia(data: string): Promise<Escala[]> {
 }
 
 async function buscarPonto(data: string): Promise<RespostaMarcacoes> {
-  const resposta = await fetch(`/api/ponto/marcacoes?data=${data}`, { cache: "no-store" });
-  if (!resposta.ok) throw new Error(`erro ${resposta.status}`);
+  // Envia o "crachá" do login: a rota só responde para quem está conectado.
+  const { data: sessao } = await supabase().auth.getSession();
+  const token = sessao.session?.access_token;
+  const resposta = await fetch(`/api/ponto/marcacoes?data=${data}`, {
+    cache: "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resposta.ok) {
+    let erro = `erro ${resposta.status}`;
+    try {
+      const corpo = (await resposta.json()) as { erro?: string };
+      if (corpo.erro) erro = corpo.erro;
+    } catch {
+      // sem detalhe
+    }
+    throw new Error(erro);
+  }
   return (await resposta.json()) as RespostaMarcacoes;
 }
 

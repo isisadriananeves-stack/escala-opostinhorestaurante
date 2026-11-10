@@ -3,6 +3,7 @@ import { Oswald } from "next/font/google";
 import "./globals.css";
 import { identidade } from "@/config/identidade";
 import { Cabecalho } from "@/components/Cabecalho";
+import { Portao } from "@/components/Portao";
 
 // Letra condensada de letreiro antigo (parecida com a do logo),
 // usada nos títulos, botões e menu.
@@ -33,8 +34,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       style={estilo}
     >
       <body className="flex min-h-full flex-col">
-        <Cabecalho />
-        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-5">{children}</main>
+        {/* Sem login, o portão mostra só a tela Entrar. */}
+        <Portao cabecalho={<Cabecalho />}>{children}</Portao>
         <footer className="px-4 py-6 text-center text-xs text-[color:var(--cor-principal)] opacity-70">
           {identidade.nome} · sistema de escala
         </footer>
