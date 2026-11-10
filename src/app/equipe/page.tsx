@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
-import { FUNCOES_PADRAO, type Funcionario } from "@/lib/tipos";
+import {
+  CAMPOS_FUNCIONARIO_EQUIPE,
+  FUNCOES_PADRAO,
+  type FuncionarioEquipe as Funcionario,
+} from "@/lib/tipos";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
 
 // Dados do formulário de adicionar/editar. Sem id = funcionário novo.
@@ -11,7 +15,10 @@ type Formulario = {
   nome: string;
   funcao: string;
   telefone: string;
+  // CPF novo digitado. Vazio na edição = manter o CPF que já está cadastrado.
   cpf: string;
+  // 4 últimos números do CPF já cadastrado (só para mostrar).
+  cpfFinalAtual: string | null;
   sexo: "" | "F" | "M";
 };
 
@@ -20,6 +27,7 @@ const FORMULARIO_VAZIO: Formulario = {
   funcao: FUNCOES_PADRAO[0],
   telefone: "",
   cpf: "",
+  cpfFinalAtual: null,
   sexo: "",
 };
 
@@ -34,7 +42,7 @@ const ROTULO_SEXO = { F: "Feminino", M: "Masculino" } as const;
 async function buscarFuncionarios(): Promise<Funcionario[]> {
   const { data, error } = await supabase()
     .from("funcionarios")
-    .select("*")
+    .select(CAMPOS_FUNCIONARIO_EQUIPE)
     .order("nome");
   if (error) throw error;
   return data ?? [];
@@ -87,7 +95,8 @@ export default function Equipe() {
       nome: f.nome,
       funcao: f.funcao,
       telefone: f.telefone ?? "",
-      cpf: formatarCpf(f.cpf),
+      cpf: "",
+      cpfFinalAtual: f.cpf_final,
       sexo: f.sexo ?? "",
     });
     // O formulário fica no topo da tela: rola até ele.
@@ -120,8 +129,9 @@ export default function Equipe() {
         nome,
         funcao,
         telefone: telefone || null,
-        cpf: cpf || null,
         sexo: formulario.sexo || null,
+        // Na edição, CPF vazio = manter o atual (o navegador nem conhece o CPF completo).
+        ...(cpf ? { cpf } : formulario.id ? {} : { cpf: null }),
       };
       const db = supabase().from("funcionarios");
       const { error } = formulario.id
@@ -216,13 +226,15 @@ export default function Equipe() {
           <label className="block">
             <span className="mb-1 block font-medium">CPF</span>
             <span className="mb-2 block text-sm text-neutral-600">
-              Usado para ligar o funcionário às marcações do ponto.
+              {formulario.cpfFinalAtual
+                ? `Cadastrado: final ${formulario.cpfFinalAtual}. Preencha só se quiser trocar.`
+                : "Usado para ligar o funcionário às marcações do ponto."}
             </span>
             <input
               className="campo"
               inputMode="numeric"
               autoComplete="off"
-              placeholder="000.000.000-00"
+              placeholder={formulario.cpfFinalAtual ? "Novo CPF (opcional)" : "000.000.000-00"}
               maxLength={14}
               value={formulario.cpf}
               onChange={(e) => setFormulario({ ...formulario, cpf: e.target.value })}
@@ -352,6 +364,9 @@ function CartaoFuncionario({ funcionario }: { funcionario: Funcionario }) {
         ) : (
           <span className="text-amber-700"> · sexo não informado</span>
         )}
+      </p>
+      <p className="text-sm text-neutral-600">
+        {funcionario.cpf_final ? `CPF final ${funcionario.cpf_final}` : "CPF não informado"}
       </p>
       {funcionario.telefone ? (
         <a

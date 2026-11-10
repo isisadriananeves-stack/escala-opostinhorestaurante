@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
-import type { Escala, Funcionario, Turno } from "@/lib/tipos";
+import {
+  CAMPOS_FUNCIONARIO_ESCALA,
+  type Escala,
+  type FuncionarioEscala as Funcionario,
+  type Turno,
+} from "@/lib/tipos";
 import {
   diaMes,
   diasDaSemana,
@@ -77,7 +82,7 @@ export default function EscalaDaSemana() {
           db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
           db
             .from("funcionarios")
-            .select("*")
+            .select(CAMPOS_FUNCIONARIO_ESCALA)
             .order("funcao")
             .order("nome"),
         ]);

@@ -3,11 +3,12 @@
 // quem confere o crachá é o próprio Supabase.
 
 import "server-only";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chavePublica } from "@/lib/supabase";
 
 export type ResultadoLogin =
-  | { ok: true }
+  // db: cliente do banco "em nome" de quem está logado (vale a mesma regra de acesso).
+  | { ok: true; db: SupabaseClient }
   | { ok: false; status: 401 | 403 | 500; erro: string };
 
 export async function conferirLogin(request: Request): Promise<ResultadoLogin> {
@@ -37,5 +38,5 @@ export async function conferirLogin(request: Request): Promise<ResultadoLogin> {
   if (!autorizado.error && autorizado.data !== true) {
     return { ok: false, status: 403, erro: "Seu e-mail não tem acesso a este sistema." };
   }
-  return { ok: true };
+  return { ok: true, db };
 }

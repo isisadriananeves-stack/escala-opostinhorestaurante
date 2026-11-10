@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { identidade } from "@/config/identidade";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
-import type { Funcionario } from "@/lib/tipos";
+import { CAMPOS_FUNCIONARIO_INICIO, type FuncionarioInicio } from "@/lib/tipos";
 import Team01 from "@/components/ui/team-01";
 
 type Estado =
@@ -17,7 +17,7 @@ type Estado =
 export default function Inicio() {
   const [estado, setEstado] = useState<Estado>({ tipo: "carregando" });
   // Funcionários ativos, mostrados na vitrine da equipe.
-  const [equipe, setEquipe] = useState<Funcionario[]>([]);
+  const [equipe, setEquipe] = useState<FuncionarioInicio[]>([]);
 
   useEffect(() => {
     async function verificar() {
@@ -32,7 +32,7 @@ export default function Inicio() {
           db.from("turnos").select("id", { count: "exact", head: true }),
           db
             .from("funcionarios")
-            .select("*")
+            .select(CAMPOS_FUNCIONARIO_INICIO)
             .eq("ativo", true)
             .order("funcao")
             .order("nome"),

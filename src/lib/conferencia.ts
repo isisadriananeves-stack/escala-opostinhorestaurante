@@ -1,7 +1,12 @@
 // Compara a escala planejada de um dia com as marcações de ponto.
 // Não acessa banco nem API: recebe os dados prontos.
 
-import type { Escala, Funcionario, MarcacaoPonto, Turno } from "@/lib/tipos";
+import type {
+  Escala,
+  FuncionarioConferencia as Funcionario,
+  MarcacaoConferida,
+  Turno,
+} from "@/lib/tipos";
 import { horaCurta, horaParaMinutos } from "@/lib/datas";
 
 export type Situacao =
@@ -19,7 +24,7 @@ export type LinhaEscalado = {
   turnos: Turno[];
   planejadoInicio: string; // "08:30"
   planejadoFim: string; // "23:30"
-  marcacao: MarcacaoPonto | null;
+  marcacao: MarcacaoConferida | null;
   situacao: Situacao;
   minutosAtraso: number; // > 0 só quando atrasado
   minutosHoraExtra: number; // > 0 só quando fez hora extra
@@ -27,7 +32,7 @@ export type LinhaEscalado = {
 
 export type LinhaNaoEscalado = {
   funcionario: Funcionario | null; // null = CPF não cadastrado no sistema
-  marcacao: MarcacaoPonto;
+  marcacao: MarcacaoConferida;
 };
 
 export type ResultadoConferencia = {
@@ -42,10 +47,6 @@ export type ResultadoConferencia = {
   };
 };
 
-export function soDigitos(cpf: string | null | undefined): string {
-  return (cpf ?? "").replace(/\D/g, "");
-}
-
 export function conferirDia(params: {
   data: string;
   hoje: string;
@@ -53,7 +54,8 @@ export function conferirDia(params: {
   turnos: Turno[];
   funcionarios: Funcionario[];
   escalasDoDia: Escala[];
-  marcacoes: MarcacaoPonto[];
+  // Marcações já ligadas ao funcionário pelo servidor (sem CPF completo).
+  marcacoes: MarcacaoConferida[];
   temDados: boolean;
   toleranciaAtrasoMinutos: number;
   horaExtraMinutos: number;
@@ -73,12 +75,12 @@ export function conferirDia(params: {
 
   const turnoPorId = new Map(turnos.map((t) => [t.id, t]));
   const funcionarioPorId = new Map(funcionarios.map((f) => [f.id, f]));
-  const funcionarioPorCpf = new Map(
-    funcionarios.filter((f) => soDigitos(f.cpf).length === 11).map((f) => [soDigitos(f.cpf), f]),
-  );
-  const marcacaoPorCpf = new Map<string, MarcacaoPonto>();
+  const marcacaoPorFuncionario = new Map<string, MarcacaoConferida>();
+  const semCadastro: MarcacaoConferida[] = [];
   for (const m of marcacoes) {
-    if (m.data === data && !marcacaoPorCpf.has(m.cpf)) marcacaoPorCpf.set(m.cpf, m);
+    if (m.data !== data) continue;
+    if (!m.funcionarioId) semCadastro.push(m);
+    else if (!marcacaoPorFuncionario.has(m.funcionarioId)) marcacaoPorFuncionario.set(m.funcionarioId, m);
   }
 
   // Turnos de cada funcionário escalado no dia.
@@ -95,7 +97,6 @@ export function conferirDia(params: {
   const futuro = data > hoje;
   const ehHoje = data === hoje;
   const escalados: LinhaEscalado[] = [];
-  const cpfsEscalados = new Set<string>();
 
   for (const [id, lista] of turnosDaPessoa) {
     const funcionario = funcionarioPorId.get(id)!;
@@ -104,9 +105,8 @@ export function conferirDia(params: {
     const fim = horaCurta(
       turnosOrdenados.map((t) => t.hora_fim).sort((a, b) => b.localeCompare(a))[0],
     );
-    const cpf = soDigitos(funcionario.cpf);
-    if (cpf.length === 11) cpfsEscalados.add(cpf);
-    const marcacao = cpf.length === 11 ? (marcacaoPorCpf.get(cpf) ?? null) : null;
+    const temCpf = Boolean(funcionario.cpf_final);
+    const marcacao = marcacaoPorFuncionario.get(id) ?? null;
 
     let situacao: Situacao;
     let minutosAtraso = 0;
@@ -114,7 +114,7 @@ export function conferirDia(params: {
 
     if (futuro) situacao = "futuro";
     else if (!temDados) situacao = "sem-dados";
-    else if (cpf.length !== 11) situacao = "sem-cpf";
+    else if (!temCpf) situacao = "sem-cpf";
     else if (!marcacao) {
       const aindaPodeChegar =
         ehHoje && agoraMinutos <= horaParaMinutos(inicio) + toleranciaAtrasoMinutos;
@@ -158,9 +158,12 @@ export function conferirDia(params: {
   const naoEscalados: LinhaNaoEscalado[] =
     futuro || !temDados
       ? []
-      : Array.from(marcacaoPorCpf.values())
-          .filter((m) => !cpfsEscalados.has(m.cpf))
-          .map((m) => ({ funcionario: funcionarioPorCpf.get(m.cpf) ?? null, marcacao: m }))
+      : [
+          ...Array.from(marcacaoPorFuncionario.entries())
+            .filter(([id]) => !turnosDaPessoa.has(id))
+            .map(([id, m]) => ({ funcionario: funcionarioPorId.get(id) ?? null, marcacao: m })),
+          ...semCadastro.map((m) => ({ funcionario: null, marcacao: m })),
+        ]
           .sort((a, b) => (a.marcacao.entrada ?? "99").localeCompare(b.marcacao.entrada ?? "99"));
 
   const atrasados = escalados.filter((l) => l.situacao === "atrasado");

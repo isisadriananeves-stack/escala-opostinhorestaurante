@@ -18,6 +18,10 @@ create table if not exists funcionarios (
 );
 -- Sexo (F/M), usado na regra de folga aos domingos
 alter table funcionarios add column if not exists sexo text check (sexo in ('F', 'M'));
+-- Só os 4 últimos números do CPF, preenchidos pelo próprio banco.
+-- As telas mostram só isto; o CPF completo fica no servidor.
+alter table funcionarios
+  add column if not exists cpf_final text generated always as (right(cpf, 4)) stored;
 
 -- Turnos de trabalho (ex.: Almoço, Jantar)
 create table if not exists turnos (

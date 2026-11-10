@@ -2,7 +2,13 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
-import type { Escala, Funcionario, RespostaMarcacoes, Turno } from "@/lib/tipos";
+import {
+  CAMPOS_FUNCIONARIO_CONFERENCIA,
+  type Escala,
+  type FuncionarioConferencia as Funcionario,
+  type RespostaMarcacoes,
+  type Turno,
+} from "@/lib/tipos";
 import { diaMes, hojeISO, rotuloDia, somarDias } from "@/lib/datas";
 import { REGRAS } from "@/config/regras";
 import {
@@ -88,7 +94,7 @@ export default function ConferenciaDoDia() {
         const db = supabase();
         const [t, f] = await Promise.all([
           db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
-          db.from("funcionarios").select("*").order("nome"),
+          db.from("funcionarios").select(CAMPOS_FUNCIONARIO_CONFERENCIA).order("nome"),
         ]);
         if (t.error) throw t.error;
         if (f.error) throw f.error;
@@ -269,11 +275,11 @@ export default function ConferenciaDoDia() {
               </p>
               <ul className="space-y-3">
                 {resultado.naoEscalados.map(({ funcionario, marcacao }) => (
-                  <li key={marcacao.cpf} className="cartao">
+                  <li key={funcionario?.id ?? `sem-cadastro-${marcacao.cpfFinal}`} className="cartao">
                     <p className="titulo text-lg" style={{ color: "var(--cor-principal)" }}>
                       {funcionario
                         ? funcionario.nome
-                        : `Funcionário não cadastrado (CPF final ${marcacao.cpf.slice(-4)})`}
+                        : `Funcionário não cadastrado (CPF final ${marcacao.cpfFinal})`}
                     </p>
                     {funcionario && (
                       <p className="text-sm text-neutral-600">{funcionario.funcao}</p>

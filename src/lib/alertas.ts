@@ -2,7 +2,7 @@
 // e devolve os alertas da semana. Não acessa o banco: recebe os dados prontos.
 
 import type { RegrasDaCasa, RegraDeMinimo } from "@/config/regras";
-import type { Escala, Funcionario, Turno } from "@/lib/tipos";
+import type { Escala, FuncionarioEscala as Funcionario, Turno } from "@/lib/tipos";
 import { diaMes, diasDaSemana, paraData, rotuloDia, somarDias } from "@/lib/datas";
 
 export type TipoAlerta = "minimo" | "fechar-abrir" | "folga" | "domingo";
