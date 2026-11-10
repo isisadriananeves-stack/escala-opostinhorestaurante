@@ -23,6 +23,55 @@ alter table funcionarios add column if not exists sexo text check (sexo in ('F',
 alter table funcionarios
   add column if not exists cpf_final text generated always as (right(cpf, 4)) stored;
 
+-- Conferências do cadastro (o site confere as mesmas regras em src/lib/validacao.ts)
+-- Nome: entre 2 e 60 letras
+alter table funcionarios drop constraint if exists funcionarios_nome_tamanho;
+alter table funcionarios add constraint funcionarios_nome_tamanho
+  check (char_length(btrim(nome)) between 2 and 60);
+-- Telefone: (DD) 9XXXX-XXXX (celular) ou (DD) XXXX-XXXX (fixo, começa com 2 a 5)
+alter table funcionarios drop constraint if exists funcionarios_telefone_formato;
+alter table funcionarios add constraint funcionarios_telefone_formato
+  check (telefone is null or telefone ~ '^\([1-9][1-9]\) (9[0-9]{4}|[2-5][0-9]{3})-[0-9]{4}$');
+-- CPF: sempre 11 números
+alter table funcionarios drop constraint if exists funcionarios_cpf_formato;
+alter table funcionarios add constraint funcionarios_cpf_formato
+  check (cpf is null or cpf ~ '^[0-9]{11}$');
+
+-- Conta dos dígitos verificadores do CPF
+create or replace function cpf_valido(cpf text) returns boolean
+language plpgsql immutable as $$
+declare
+  soma int; resto int; i int;
+begin
+  if cpf is null or cpf !~ '^[0-9]{11}$' or cpf ~ '^(.)\1{10}$' then
+    return false;  -- formato errado ou todos os números iguais
+  end if;
+  soma := 0;
+  for i in 1..9 loop soma := soma + substr(cpf, i, 1)::int * (11 - i); end loop;
+  resto := (soma * 10) % 11 % 10;
+  if resto <> substr(cpf, 10, 1)::int then return false; end if;
+  soma := 0;
+  for i in 1..10 loop soma := soma + substr(cpf, i, 1)::int * (12 - i); end loop;
+  resto := (soma * 10) % 11 % 10;
+  return resto = substr(cpf, 11, 1)::int;
+end $$;
+
+-- Confere o CPF só quando ele é cadastrado ou trocado
+-- (os CPFs fictícios dos dados de exemplo continuam valendo)
+create or replace function funcionarios_confere_cpf() returns trigger
+language plpgsql as $$
+begin
+  if new.cpf is not null
+     and (tg_op = 'INSERT' or new.cpf is distinct from old.cpf)
+     and not cpf_valido(new.cpf) then
+    raise exception 'CPF inválido' using errcode = '23514',
+      hint = 'Confira os números do CPF.';
+  end if;
+  return new;
+end $$;
+-- (o gatilho que chama esta conferência é ligado no fim do arquivo,
+--  depois dos dados de exemplo, que usam CPFs fictícios)
+
 -- Turnos de trabalho (ex.: Almoço, Jantar)
 create table if not exists turnos (
   id uuid primary key default gen_random_uuid(),
@@ -107,6 +156,8 @@ insert into turnos (nome, hora_inicio, hora_fim, ordem) values
   ('Jantar', '18:00', '23:30', 2)
 on conflict (nome) do nothing;
 
+-- Desliga a conferência de CPF só enquanto os exemplos (CPFs fictícios) entram.
+drop trigger if exists confere_cpf on funcionarios;
 insert into funcionarios (nome, funcao, telefone, cpf) values
   ('Ana Souza',      'Salão',      '(11) 91234-0001', '12345678901'),
   ('Bruno Lima',     'Cozinha',    '(11) 91234-0002', '23456789012'),
@@ -139,3 +190,10 @@ where t.nome = 'Jantar' and (select count(*) from regras) = 4;
 insert into regras (dia_semana, turno_id, funcao, minimo)
 select d, t.id, 'Cozinha', 2 from turnos t, unnest(array[5, 6]) as d
 where t.nome = 'Jantar' and (select count(*) from regras) = 6;
+
+-- ---------------------------------------------------------------------
+-- Liga a conferência de CPF (só vale para CPF novo ou trocado).
+-- ---------------------------------------------------------------------
+drop trigger if exists confere_cpf on funcionarios;
+create trigger confere_cpf before insert or update of cpf on funcionarios
+  for each row execute function funcionarios_confere_cpf();

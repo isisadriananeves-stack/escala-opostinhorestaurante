@@ -8,6 +8,18 @@ import {
   type FuncionarioEquipe as Funcionario,
 } from "@/lib/tipos";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
+import {
+  NOME_MAXIMO,
+  erroCpf,
+  erroNome,
+  erroTelefone,
+  formatarTelefone,
+  limparNome,
+  mensagemDoBanco,
+} from "@/lib/validacao";
+
+// Avisos que aparecem embaixo de cada campo.
+type ErrosDoFormulario = { nome?: string; telefone?: string; cpf?: string };
 
 // Dados do formulário de adicionar/editar. Sem id = funcionário novo.
 type Formulario = {
@@ -56,6 +68,7 @@ export default function Equipe() {
   const [formulario, setFormulario] = useState<Formulario | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [erros, setErros] = useState<ErrosDoFormulario>({});
 
   // Recarrega a lista depois de salvar, desativar ou reativar.
   async function carregar() {
@@ -85,11 +98,13 @@ export default function Equipe() {
 
   function abrirNovo() {
     setAviso(null);
+    setErros({});
     setFormulario({ ...FORMULARIO_VAZIO });
   }
 
   function abrirEdicao(f: Funcionario) {
     setAviso(null);
+    setErros({});
     setFormulario({
       id: f.id,
       nome: f.nome,
@@ -106,20 +121,22 @@ export default function Equipe() {
   async function salvar(evento: React.FormEvent) {
     evento.preventDefault();
     if (!formulario) return;
-    const nome = formulario.nome.trim();
+    const nome = limparNome(formulario.nome);
     const funcao = formulario.funcao.trim();
-    const telefone = formulario.telefone.trim();
-    if (!nome) {
-      setAviso("Preencha o nome.");
+    const telefone = formatarTelefone(formulario.telefone);
+    const cpf = formulario.cpf.replace(/\D/g, "");
+    const novosErros: ErrosDoFormulario = {
+      nome: erroNome(nome) ?? undefined,
+      telefone: erroTelefone(telefone) ?? undefined,
+      cpf: erroCpf(cpf) ?? undefined,
+    };
+    setErros(novosErros);
+    if (novosErros.nome || novosErros.telefone || novosErros.cpf) {
+      setAviso("Confira os campos marcados.");
       return;
     }
     if (!funcao) {
       setAviso("Escolha a função.");
-      return;
-    }
-    const cpf = formulario.cpf.replace(/\D/g, "");
-    if (cpf && cpf.length !== 11) {
-      setAviso("O CPF precisa ter 11 números.");
       return;
     }
     setSalvando(true);
@@ -141,12 +158,8 @@ export default function Equipe() {
       setFormulario(null);
       await carregar();
     } catch (e) {
-      const codigo = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-      setAviso(
-        codigo === "23505"
-          ? "Este CPF já está cadastrado para outro funcionário."
-          : `Não foi possível salvar. ${mensagemDeErro(e)}`,
-      );
+      // O banco confere as mesmas regras: traduz a recusa para uma frase simples.
+      setAviso(mensagemDoBanco(e) ?? `Não foi possível salvar. ${mensagemDeErro(e)}`);
     } finally {
       setSalvando(false);
     }
@@ -193,10 +206,21 @@ export default function Equipe() {
             <input
               className="campo"
               value={formulario.nome}
-              onChange={(e) => setFormulario({ ...formulario, nome: e.target.value })}
+              maxLength={NOME_MAXIMO}
+              aria-invalid={Boolean(erros.nome)}
+              onChange={(e) => {
+                setFormulario({ ...formulario, nome: e.target.value });
+                setErros({ ...erros, nome: undefined });
+              }}
               autoComplete="off"
               autoFocus
             />
+            <span className="mt-1 flex justify-between gap-2 text-sm">
+              <AvisoCampo texto={erros.nome} />
+              <span className="ml-auto text-neutral-500">
+                {limparNome(formulario.nome).length}/{NOME_MAXIMO}
+              </span>
+            </span>
           </label>
           <label className="block">
             <span className="mb-1 block font-medium">Função</span>
@@ -218,10 +242,16 @@ export default function Equipe() {
               className="campo"
               type="tel"
               inputMode="tel"
-              placeholder="(11) 90000-0000"
+              placeholder="(11) 91234-5678"
+              maxLength={15}
+              aria-invalid={Boolean(erros.telefone)}
               value={formulario.telefone}
-              onChange={(e) => setFormulario({ ...formulario, telefone: e.target.value })}
+              onChange={(e) => {
+                setFormulario({ ...formulario, telefone: formatarTelefone(e.target.value) });
+                setErros({ ...erros, telefone: undefined });
+              }}
             />
+            <AvisoCampo texto={erros.telefone} />
           </label>
           <label className="block">
             <span className="mb-1 block font-medium">CPF</span>
@@ -236,10 +266,15 @@ export default function Equipe() {
               autoComplete="off"
               placeholder={formulario.cpfFinalAtual ? "Novo CPF (opcional)" : "000.000.000-00"}
               maxLength={14}
+              aria-invalid={Boolean(erros.cpf)}
               value={formulario.cpf}
-              onChange={(e) => setFormulario({ ...formulario, cpf: e.target.value })}
+              onChange={(e) => {
+                setFormulario({ ...formulario, cpf: e.target.value });
+                setErros({ ...erros, cpf: undefined });
+              }}
               onBlur={() => setFormulario({ ...formulario, cpf: formatarCpf(formulario.cpf) })}
             />
+            <AvisoCampo texto={erros.cpf} />
           </label>
           <fieldset>
             <legend className="mb-1 font-medium">Sexo</legend>
@@ -380,5 +415,14 @@ function CartaoFuncionario({ funcionario }: { funcionario: Funcionario }) {
         <p className="mt-1 text-sm text-neutral-500">Sem telefone</p>
       )}
     </div>
+  );
+}
+
+function AvisoCampo({ texto }: { texto?: string }) {
+  if (!texto) return null;
+  return (
+    <span className="mt-1 block text-sm font-medium text-red-700" role="alert">
+      {texto}
+    </span>
   );
 }
