@@ -1,74 +1,54 @@
-# API de ponto de demonstração · Vila Tempero
+# API de ponto · Pontomais
 
-API fictícia usada na aula para simular o sistema de ponto do restaurante. Ela devolve as
-marcações (batidas) de ponto de 8 funcionários fictícios. Serve para construir e testar a
-integração; depois, troca-se pela API do fornecedor real mexendo só no adaptador.
+O sistema busca as marcações de ponto no **Pontomais**, fornecedor de ponto do restaurante.
+Toda a conversa com o Pontomais fica em `src/lib/integracoes/ponto.ts`: trocar de fornecedor
+de novo é mexer só nesse arquivo, mantendo o formato `MarcacaoPonto` (`src/lib/tipos.ts`).
 
-## Acesso: três credenciais
-Como num fornecedor de verdade, a API pede três credenciais. Todas vêm de variáveis de ambiente;
-nenhuma fica no código.
+Documentação oficial (Postman): https://documenter.getpostman.com/view/4785048/RWMCvVxN
 
-| Credencial | O que identifica | Variável de ambiente | Onde vai na chamada |
-| --- | --- | --- | --- |
-| Client ID | A conta (qual restaurante) | `PONTO_CLIENT_ID` | cabeçalho `X-Client-Id` |
-| API Key | O aplicativo que chama (identificação pública) | `PONTO_API_KEY` | cabeçalho `X-Api-Key` |
-| API Secret | A senha do aplicativo (só no servidor) | `PONTO_API_SECRET` | cabeçalho `Authorization: Bearer <secret>` |
+## Acesso: um token
+| O quê | Variável de ambiente | Onde vai na chamada |
+| --- | --- | --- |
+| Endereço da API | `PONTO_API_URL` (ex.: `https://api.pontomais.com.br`) | início de todas as URLs |
+| "Token público" do painel | `PONTO_API_TOKEN` (cadastrar como **Sensitive** na Vercel) | cabeçalho `access-token` |
 
-- URL base: variável `PONTO_API_URL` (ex.: `https://api-ponto-demo.vercel.app`)
-- Os valores da API de demonstração estão na página da aula e cadastrados na Vercel (Settings > Environment
-  Variables); os do seu fornecedor, no painel dele. Nunca escreva os valores no `.env.example` nem no código
-- Se uma credencial faltar ou estiver errada, a API responde `401` e o corpo diz qual foi
-  (ex.: `{"erro":"X-Api-Key inválida"}`)
-- As chamadas devem ser feitas no servidor (Route Handler), nunca no navegador: o API Secret não
-  pode aparecer no celular de ninguém
-- Fornecedores reais variam: alguns usam só uma API Key, outros trocam Client ID e Secret por um
-  token temporário antes de cada chamada. Isso é detalhe do adaptador (`src/lib/integracoes/ponto.ts`);
-  o resto do sistema não muda
+- O token fica no painel do Pontomais: entrar como administrador, menu **Marketplace**,
+  área **API Pontomais** ("Saiba mais"), campo **Token público** (a API precisa estar contratada).
+- Não há troca por token temporário: o mesmo token vai em todas as chamadas.
+- As chamadas acontecem só no servidor (rota `/api/ponto/marcacoes`), nunca no navegador.
+- `401` = token ausente ou inválido.
 
-## GET /api/funcionarios
-Lista os funcionários cadastrados no ponto.
+## O que o adaptador usa
+1. **Colaboradores** · `GET /external_api/v1/employees?active=true&attributes=id,cpf,nis,registration_number&page=N&per_page=20`
+   Resposta: `{"employees": [{"id": 8, "cpf": "999.999.999-99", "nis": "999.99999.99-9", "registration_number": "456"}], "meta": {...}}`
+2. **Registros de ponto do dia** · `POST /external_api/v1/reports/time_cards`
+   ```json
+   {"report": {"start_date": "2026-11-04", "end_date": "2026-11-04", "group_by": "employee",
+     "row_filters": "", "columns": "employee_name,pis,registration_number,date,time,time_card_index",
+     "format": "json"}}
+   ```
+   Cada batida vem como `{"date": "Ter, 04/09/2018", "time": "08:00", "pis": "...",
+   "registration_number": "0001", "time_card_index": "1ª Entrada"}`, dentro de `data` (agrupada).
 
-```json
-[
-  { "id": "f01", "nome": "Ana Souza", "cpf": "12345678901", "funcao": "Salão", "telefone": "(11) 91234-0001" }
-]
-```
-
-A ligação com o funcionário do nosso sistema é feita pelo campo `cpf` (só dígitos, 11 caracteres).
-
-## GET /api/marcacoes?data=AAAA-MM-DD
-Marcações de um dia. Também aceita um período: `?inicio=AAAA-MM-DD&fim=AAAA-MM-DD` (máximo 31 dias).
-
-```json
-[
-  {
-    "cpf": "12345678901",
-    "data": "2026-11-04",
-    "entrada": "10:55",
-    "saida_intervalo": "15:35",
-    "volta_intervalo": "17:55",
-    "saida": "23:35"
-  }
-]
-```
-
-- Horários no formato `HH:MM`, horário local, ou `null` quando não houve a batida
-- Quem faltou simplesmente não aparece na lista daquele dia
-- Quem trabalhou só um turno tem `saida_intervalo` e `volta_intervalo` em `null`
-- Segunda-feira o restaurante fictício não abre: lista vazia
+## Tradução para o formato do sistema
+- O relatório **não traz o CPF**: cada batida é ligada ao CPF pela **matrícula**
+  (`registration_number`, sem zeros à esquerda) ou, se faltar, pelo **PIS** (`nis`/`pis`).
+  Batidas sem pessoa reconhecida são ignoradas (o registro da Vercel mostra só a quantidade).
+- As batidas de cada pessoa no dia, em ordem de horário, viram:
+  - 1ª batida → `entrada`; última, se for uma saída → `saida`
+    (número ímpar de batidas, ex.: ainda não saiu → `saida` vazia);
+  - com 3 ou mais batidas, a 2ª e a 3ª → `saidaIntervalo` e `voltaIntervalo`.
+- Datas "Ter, 04/09/2018" → "2018-09-04"; CPF com pontos → só dígitos.
+- A ligação com o funcionário do nosso sistema continua pelo **CPF**: cadastre na tela Equipe
+  o mesmo CPF que está no Pontomais.
 
 ## Regras da conferência (o que o sistema faz com esses dados)
-Compara a escala planejada do dia com as marcações:
-- No horário: entrada até 10 minutos depois do início do turno (tolerância em `configuracoes.tolerancia_atraso_minutos`)
-- Atrasado: entrada depois da tolerância; mostrar os minutos de atraso
+- No horário: entrada até 10 minutos depois do início do turno (`src/config/regras.ts`)
+- Atrasado: entrada depois da tolerância; mostra os minutos de atraso
 - Faltou: funcionário escalado sem nenhuma marcação no dia
-- Hora extra: saída mais de 30 minutos depois do fim do turno (`configuracoes.hora_extra_minutos`)
+- Hora extra: saída mais de 30 minutos depois do fim do turno
 - Não escalado: bateu ponto mas não estava na escala do dia
 
-## Situações plantadas
-Todo dia aberto tem, de propósito, um atraso, uma falta e uma hora extra entre os funcionários
-que trabalham naquele dia, para a tela de conferência ter o que mostrar.
-
-## Se a API não responder
-Use `docs/marcacoes-exemplo.json` (dias 04/11 e 05/11/2026) como dados de exemplo e avise na tela
-que são dados de exemplo.
+## Se o Pontomais não responder
+A tela usa `docs/marcacoes-exemplo.json` (dias 04/11 e 05/11/2026, da antiga API de demonstração)
+e avisa que são dados de exemplo, com o motivo.

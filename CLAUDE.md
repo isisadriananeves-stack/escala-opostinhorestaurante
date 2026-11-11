@@ -35,7 +35,7 @@ sem formação técnica, com ajuda da IA. Leia este arquivo antes de qualquer ta
 9. Mantenha o que já funciona. Mudanças pequenas e verificáveis; rode `npm run build` antes do commit.
 10. Ao terminar, faça commit com mensagem curta em português e push direto para a branch `main`
     (`git push origin HEAD:main`). Não abra pull request: a Vercel publica o que está na `main`.
-11. A API de ponto externa (`PONTO_API_URL`, com `PONTO_CLIENT_ID`, `PONTO_API_KEY` e `PONTO_API_SECRET`) só responde a partir do site publicado na Vercel.
+11. A API de ponto externa (Pontomais: `PONTO_API_URL` e `PONTO_API_TOKEN`) só responde a partir do site publicado na Vercel.
     Não tente chamá-la daqui: a rede deste ambiente não alcança a internet em geral e a falha
     não significa erro no código. Confie em `docs/api-ponto.md` e em `docs/marcacoes-exemplo.json`.
 
