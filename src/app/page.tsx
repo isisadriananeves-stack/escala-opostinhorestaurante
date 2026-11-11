@@ -2,11 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { identidade } from "@/config/identidade";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import { CAMPOS_FUNCIONARIO_INICIO, type FuncionarioInicio } from "@/lib/tipos";
-import Team01 from "@/components/ui/team-01";
+import { paraCrachas } from "@/lib/crachas";
+import { TeamLanyardRail } from "@/components/ui/team-lanyard-rail";
 
 type Estado =
   | { tipo: "carregando" }
@@ -18,6 +19,7 @@ export default function Inicio() {
   const [estado, setEstado] = useState<Estado>({ tipo: "carregando" });
   // Funcionários ativos, mostrados na vitrine da equipe.
   const [equipe, setEquipe] = useState<FuncionarioInicio[]>([]);
+  const crachas = useMemo(() => paraCrachas(equipe), [equipe]);
 
   useEffect(() => {
     async function verificar() {
@@ -76,7 +78,17 @@ export default function Inicio() {
         </div>
       </section>
 
-      {equipe.length > 0 && <Team01 pessoas={equipe} />}
+      {crachas.length > 0 && (
+        // O código de barras e o QR code dos crachás são só enfeite: não guardam nenhum dado.
+        <TeamLanyardRail
+          items={crachas}
+          eyebrow={`Equipe · ${crachas.length} ${crachas.length === 1 ? "pessoa" : "pessoas"}`}
+          heading="Quem faz O Postinho acontecer"
+          caption="Arraste para o lado, puxe um crachá ou toque para virar."
+          autoplay
+          className="rounded-xl border border-border"
+        />
+      )}
 
       <section className="cartao">
         <h2 className="text-lg font-semibold">Conexão com o banco de dados</h2>

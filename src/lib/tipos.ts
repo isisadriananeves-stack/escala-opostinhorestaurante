@@ -11,13 +11,15 @@ export type Funcionario = {
   ativo: boolean;
   // "F" = feminino, "M" = masculino, null = não informado (usado na regra dos domingos)
   sexo?: "F" | "M" | null;
+  // Data do cadastro (o banco preenche sozinho).
+  criado_em?: string;
 };
 
 // O que cada tela busca de um funcionário: só o que ela mostra ou usa.
 // O CPF completo nunca vai para o navegador; quem precisa dele é o servidor
 // (rota da conferência de ponto).
-export const CAMPOS_FUNCIONARIO_INICIO = "id, nome, funcao";
-export type FuncionarioInicio = Pick<Funcionario, "id" | "nome" | "funcao">;
+export const CAMPOS_FUNCIONARIO_INICIO = "id, nome, funcao, criado_em";
+export type FuncionarioInicio = Pick<Funcionario, "id" | "nome" | "funcao" | "criado_em">;
 
 export const CAMPOS_FUNCIONARIO_EQUIPE = "id, nome, funcao, telefone, ativo, sexo, cpf_final";
 export type FuncionarioEquipe = Pick<

@@ -83,43 +83,24 @@ h2 {
     0 1px 2px rgb(42 26 20 / 0.06);
 }
 
-/* Animação de "subir e aparecer" (usada na vitrine da equipe). */
-@keyframes surgir-de-baixo {
-  from {
-    opacity: 0;
-    transform: translateY(40px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* Nomes de cor no padrão shadcn (usados pelo mural de crachás em
+   src/components/ui/team-lanyard-rail.tsx), apontando para as cores do Postinho.
+   Os chart-1 a chart-5 são as cores das fitas de cada função. */
+@theme {
+  --color-background: var(--cor-secundaria);
+  --color-foreground: var(--cor-texto);
+  --color-card: var(--cor-cartao);
+  --color-card-foreground: var(--cor-texto);
+  --color-muted: #eadcc2;
+  --color-muted-foreground: #7a6656;
+  --color-border: var(--cor-borda);
+  --color-ring: var(--cor-principal);
+  --color-chart-1: var(--cor-principal);
+  --color-chart-2: var(--cor-detalhe);
+  --color-chart-3: #6b4226;
+  --color-chart-4: #5f6b2e;
+  --color-chart-5: #1f5c63;
 }
-@keyframes surgir-de-cima {
-  from {
-    opacity: 0;
-    transform: translateY(-40px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.surgir-espera {
-  opacity: 0;
-}
-.surgir {
-  animation: surgir-de-baixo 0.8s cubic-bezier(0.21, 0.47, 0.32, 0.98) both;
-}
-.surgir-de-cima {
-  animation: surgir-de-cima 0.8s cubic-bezier(0.21, 0.47, 0.32, 0.98) both;
-}
-/* Quem pediu ao celular para reduzir animações vê tudo parado. */
-@media (prefers-reduced-motion: reduce) {
-  .surgir-espera {
-    opacity: 1;
-  }
-  .surgir,
-  .surgir-de-cima {
-    animation: none;
-  }
-}
+
+/* O site tem só o visual claro: o "modo escuro" do celular não muda as cores. */
+@custom-variant dark (&:where(.tema-escuro, .tema-escuro *));
