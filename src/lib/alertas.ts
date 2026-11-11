@@ -17,6 +17,14 @@ export type Alerta = {
   celulas: { data: string; turnoId: string }[];
 };
 
+// Nome de cada tipo de alerta, usado nas listas da tela.
+export const ROTULO_TIPO: Record<TipoAlerta, string> = {
+  minimo: "Falta gente",
+  "fechar-abrir": "Fecha e abre",
+  folga: "Folga",
+  domingo: "Domingo",
+};
+
 export type ResultadoAlertas = {
   alertas: Alerta[];
   // Alertas por quadro: chave "data|turnoId".

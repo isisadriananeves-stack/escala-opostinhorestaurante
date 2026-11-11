@@ -6,6 +6,7 @@ import {
   CAMPOS_FUNCIONARIO_ESCALA,
   type Escala,
   type FuncionarioEscala as Funcionario,
+  type RespostaSugestao,
   type Turno,
 } from "@/lib/tipos";
 import {
@@ -18,6 +19,7 @@ import {
   somarDias,
 } from "@/lib/datas";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
+import { PropostaEscala, diferencaDaProposta } from "@/components/PropostaEscala";
 import { REGRAS } from "@/config/regras";
 import {
   calcularAlertas,
@@ -25,6 +27,7 @@ import {
   conferirMinimo,
   periodoParaConferir,
   regraDoQuadro,
+  ROTULO_TIPO,
   type Alerta,
   type ResultadoAlertas,
 } from "@/lib/alertas";
@@ -45,6 +48,39 @@ async function buscarEscalas(segunda: string): Promise<Escala[]> {
     .lte("data", fim);
   if (error) throw error;
   return data ?? [];
+}
+
+// Pede à IA (pela rota do servidor) uma sugestão para a semana. Não salva nada.
+async function pedirSugestao(segunda: string): Promise<RespostaSugestao> {
+  // Envia o "crachá" do login: a rota só responde para quem está conectado.
+  const { data: sessao } = await supabase().auth.getSession();
+  const token = sessao.session?.access_token;
+  let resposta: Response;
+  try {
+    resposta = await fetch("/api/escala/sugerir", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ segunda }),
+    });
+  } catch {
+    throw new Error("Sem conexão com o servidor. Confira a internet e tente de novo.");
+  }
+  if (!resposta.ok) {
+    let erro = `erro ${resposta.status}`;
+    if (resposta.status === 504) erro = "A IA demorou demais para responder. Tente de novo.";
+    try {
+      const corpo = (await resposta.json()) as { erro?: string };
+      if (corpo.erro) erro = corpo.erro;
+    } catch {
+      // sem detalhe
+    }
+    throw new Error(erro);
+  }
+  return (await resposta.json()) as RespostaSugestao;
 }
 
 // A data de hoje vem do celular (no servidor não há "hoje": fica vazio).
@@ -69,6 +105,19 @@ export default function EscalaDaSemana() {
   const [celula, setCelula] = useState<CelulaAberta | null>(null);
   const [salvandoId, setSalvandoId] = useState<string | null>(null);
   const fecharCelula = useCallback(() => setCelula(null), []);
+
+  // Sugestão da IA: fica na tela até o dono aprovar ou descartar.
+  const [sugerindo, setSugerindo] = useState(false);
+  const [erroSugestao, setErroSugestao] = useState<string | null>(null);
+  const [proposta, setProposta] = useState<{ segunda: string; dados: RespostaSugestao } | null>(
+    null,
+  );
+  const [salvandoProposta, setSalvandoProposta] = useState(false);
+  const [erroProposta, setErroProposta] = useState<string | null>(null);
+  const descartarProposta = useCallback(() => {
+    setProposta(null);
+    setErroProposta(null);
+  }, []);
 
   const carregando = !cadastrosCarregados || semanaCarregada !== segunda;
 
@@ -167,6 +216,63 @@ export default function EscalaDaSemana() {
     }
   }
 
+  async function sugerir() {
+    if (!segunda) return;
+    setSugerindo(true);
+    setErroSugestao(null);
+    try {
+      const dados = await pedirSugestao(segunda);
+      setErroProposta(null);
+      setProposta({ segunda, dados });
+    } catch (e) {
+      setErroSugestao(mensagemDeErro(e));
+    } finally {
+      setSugerindo(false);
+    }
+  }
+
+  // Grava só a diferença: primeiro quem entra, depois tira quem sai.
+  async function aprovarProposta() {
+    if (!proposta) return;
+    const semanaDaProposta = proposta.segunda;
+    setSalvandoProposta(true);
+    setErroProposta(null);
+    try {
+      const { entram, saem } = diferencaDaProposta(
+        proposta.dados.escalas,
+        escalas,
+        semanaDaProposta,
+      );
+      if (entram.length > 0) {
+        const { error } = await supabase().from("escalas").insert(entram);
+        if (error) throw error;
+      }
+      if (saem.length > 0) {
+        const { error } = await supabase()
+          .from("escalas")
+          .delete()
+          .in(
+            "id",
+            saem.map((e) => e.id),
+          );
+        if (error) throw error;
+      }
+      setEscalas(await buscarEscalas(semanaDaProposta));
+      setProposta(null);
+    } catch (e) {
+      const mensagem = mensagemDeErro(e);
+      // Recarrega para a proposta comparar com o que está de fato salvo.
+      try {
+        setEscalas(await buscarEscalas(semanaDaProposta));
+      } catch {
+        // mantém a mensagem do erro original
+      }
+      setErroProposta(mensagem);
+    } finally {
+      setSalvandoProposta(false);
+    }
+  }
+
   if (semVariaveis) return <AvisoSemVariaveis />;
 
   const resultado: ResultadoAlertas | null =
@@ -191,7 +297,7 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1"
           onClick={() => setDeslocamento((d) => d - 1)}
-          disabled={!segunda}
+          disabled={!segunda || sugerindo}
           aria-label="Semana anterior"
         >
           ◀ Anterior
@@ -200,7 +306,7 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1"
           onClick={() => setDeslocamento(0)}
-          disabled={!segunda || ehSemanaAtual}
+          disabled={!segunda || ehSemanaAtual || sugerindo}
         >
           Hoje
         </button>
@@ -208,12 +314,35 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1"
           onClick={() => setDeslocamento((d) => d + 1)}
-          disabled={!segunda}
+          disabled={!segunda || sugerindo}
           aria-label="Próxima semana"
         >
           Próxima ▶
         </button>
       </div>
+
+      {turnos.length > 0 && (
+        <div className="space-y-1">
+          <button
+            type="button"
+            className="botao w-full"
+            onClick={sugerir}
+            disabled={!segunda || carregando || sugerindo}
+          >
+            {sugerindo ? "Montando a sugestão..." : "✨ Sugerir escala"}
+          </button>
+          <p className="text-center text-sm text-neutral-600">
+            {sugerindo
+              ? "A IA está montando a semana. Pode levar até 2 minutos."
+              : "A IA propõe a semana na tela seguindo as regras da casa. Nada é salvo sem você aprovar."}
+          </p>
+          {erroSugestao && (
+            <p className="cartao border-red-300 bg-red-50! shadow-none! text-red-800" role="alert">
+              Não foi possível sugerir a escala. Detalhe: {erroSugestao}
+            </p>
+          )}
+        </div>
+      )}
 
       {erro && <AvisoErro mensagem={erro} />}
 
@@ -346,6 +475,20 @@ export default function EscalaDaSemana() {
           onFechar={fecharCelula}
         />
       )}
+
+      {proposta && proposta.segunda === segunda && (
+        <PropostaEscala
+          proposta={proposta.dados}
+          segunda={proposta.segunda}
+          turnos={turnos}
+          funcionarios={funcionarios}
+          escalasAtuais={escalas}
+          salvando={salvandoProposta}
+          erro={erroProposta}
+          onAprovar={aprovarProposta}
+          onDescartar={descartarProposta}
+        />
+      )}
     </div>
   );
 }
@@ -392,13 +535,6 @@ function ResumoAlertas({ resultado }: { resultado: ResultadoAlertas }) {
     </section>
   );
 }
-
-const ROTULO_TIPO: Record<Alerta["tipo"], string> = {
-  minimo: "Falta gente",
-  "fechar-abrir": "Fecha e abre",
-  folga: "Folga",
-  domingo: "Domingo",
-};
 
 function primeiroNome(nome: string): string {
   const partes = nome.trim().split(/\s+/);
