@@ -75,6 +75,23 @@ export function erroCpf(cpf: string): string | null {
   return null;
 }
 
+/** Mensagem de erro da data de entrada "AAAA-MM-DD" (vazio é permitido), ou null se estiver certa. */
+export function erroAdmissao(data: string, hoje: string): string | null {
+  if (!data) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return "Data inválida.";
+  if (data > hoje) return "A data de entrada não pode ser no futuro.";
+  if (data < "1950-01-01") return "Confira o ano da data de entrada.";
+  return null;
+}
+
+const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/** "2019-03-15" -> "mar/2019". */
+export function mesAno(data: string): string {
+  const [ano, mes] = data.split("-");
+  return `${MESES_CURTOS[Number(mes) - 1] ?? mes}/${ano}`;
+}
+
 /** Traduz a recusa do banco para uma frase simples. */
 export function mensagemDoBanco(erro: unknown): string | null {
   const texto =
@@ -84,6 +101,9 @@ export function mensagemDoBanco(erro: unknown): string | null {
   if (texto.includes("23505")) return "Este CPF já está cadastrado para outro funcionário.";
   if (texto.includes("funcionarios_nome_tamanho")) return `O nome precisa ter de ${NOME_MINIMO} a ${NOME_MAXIMO} letras.`;
   if (texto.includes("funcionarios_telefone_formato")) return "Telefone em formato inválido. Ex.: (11) 91234-5678.";
+  if (texto.includes("funcionarios_admissao_valida")) {
+    return "Data de entrada inválida: não pode ser no futuro nem antes de 1950.";
+  }
   if (texto.includes("CPF inválido") || texto.includes("funcionarios_cpf_formato")) {
     return "CPF inválido: confira os números.";
   }

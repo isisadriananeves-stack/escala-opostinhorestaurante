@@ -29,6 +29,17 @@ Documentação oficial (Postman): https://documenter.getpostman.com/view/4785048
    ```
    Cada batida vem como `{"date": "Ter, 04/09/2018", "time": "08:00", "pis": "...",
    "registration_number": "0001", "time_card_index": "1ª Entrada"}`, dentro de `data` (agrupada).
+3. **Datas de admissão** (botão "Buscar datas no Pontomais" da tela Equipe) ·
+   `POST /external_api/v1/reports/employees`
+   ```json
+   {"report": {"group_by": "", "row_filters": "", "columns": "name,cpf,admission_date",
+     "format": "json", "page": 1, "per_page": 500}}
+   ```
+   Cada colaborador ativo vem como `{"name": "...", "cpf": "999.999.999-99",
+   "admission_date": "Ter, 07/08/2018"}`, dentro de `data`. `heading.page` traz "página/total".
+   A rota `/api/ponto/admissoes` liga pelo CPF e grava em `funcionarios.data_admissao`
+   **só de quem está sem data** (data acertada à mão não é trocada). Se o mesmo CPF aparecer
+   duas vezes (readmissão), vale a admissão mais recente.
 
 ## Tradução para o formato do sistema
 - O relatório **não traz o CPF**: cada batida é ligada ao CPF pela **matrícula**

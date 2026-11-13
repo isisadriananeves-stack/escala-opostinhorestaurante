@@ -60,12 +60,12 @@ function retratoComIniciais(nome: string, tom: Tom): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-/** "Na equipe do Postinho desde março de 2026." (ou nada, se a data faltar). */
-function textoDoVerso(criadoEm: string | undefined): string | undefined {
-  if (!criadoEm) return undefined;
-  const data = new Date(criadoEm);
-  if (Number.isNaN(data.getTime())) return undefined;
-  return `Na equipe do Postinho desde ${MESES[data.getMonth()]} de ${data.getFullYear()}.`;
+/** "Na equipe do Postinho desde março de 2019." (ou nada, se a data de entrada faltar). */
+function textoDoVerso(dataAdmissao: string | null | undefined): string | undefined {
+  const partes = dataAdmissao?.match(/^(\d{4})-(\d{2})-\d{2}/);
+  if (!partes) return undefined;
+  const mes = MESES[Number(partes[2]) - 1];
+  return mes ? `Na equipe do Postinho desde ${mes} de ${partes[1]}.` : undefined;
 }
 
 export function paraCrachas(equipe: FuncionarioInicio[]): LanyardMember[] {
@@ -77,7 +77,7 @@ export function paraCrachas(equipe: FuncionarioInicio[]): LanyardMember[] {
       role: pessoa.funcao,
       team: `O Postinho · ${pessoa.funcao}`,
       image: retratoComIniciais(pessoa.nome, tom),
-      bio: textoDoVerso(pessoa.criado_em),
+      bio: textoDoVerso(pessoa.data_admissao),
       tags: [pessoa.funcao],
       tone: tom,
     };

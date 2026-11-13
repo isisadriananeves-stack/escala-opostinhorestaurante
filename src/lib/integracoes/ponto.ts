@@ -10,7 +10,7 @@
 //   4. organiza as batidas de cada pessoa em entrada, intervalo e saída.
 
 import "server-only";
-import type { MarcacaoPonto } from "@/lib/tipos";
+import type { AdmissaoPonto, MarcacaoPonto } from "@/lib/tipos";
 import exemplo from "../../../docs/marcacoes-exemplo.json";
 
 /** Erro com mensagem em português, segura para mostrar na tela (sem segredos). */
@@ -19,6 +19,7 @@ export class ErroPonto extends Error {}
 const TEMPO_LIMITE_MS = 15_000;
 const POR_PAGINA = 20; // a documentação do Pontomais cita no máximo 20 por página em listagens
 const MAXIMO_DE_PAGINAS = 200;
+const POR_PAGINA_RELATORIO = 500; // limite do relatório de colaboradores
 
 // ---------------------------------------------------------------------------
 // Formato do Pontomais (como a API devolve)
@@ -36,6 +37,11 @@ type BatidaPontomais = {
   pis?: unknown;
   registration_number?: unknown;
   time_card_index?: unknown; // "1ª Entrada", "1ª Saída", "2ª Entrada", "2ª Saída"
+};
+
+type LinhaColaboradorPontomais = {
+  cpf?: unknown; // "999.999.999-99"
+  admission_date?: unknown; // "Ter, 07/08/2018"
 };
 
 // ---------------------------------------------------------------------------
@@ -131,14 +137,14 @@ function tipoDaBatida(valor: unknown): "entrada" | "saida" | null {
   return null;
 }
 
-/** Junta todas as linhas de batida do relatório, em qualquer nível de agrupamento. */
-function linhasDoRelatorio(no: unknown, saida: BatidaPontomais[] = []): BatidaPontomais[] {
+/** Junta as linhas do relatório que têm o campo-chave, em qualquer nível de agrupamento. */
+function linhasDoRelatorio<T>(no: unknown, campoChave: string, saida: T[] = []): T[] {
   if (Array.isArray(no)) {
-    for (const item of no) linhasDoRelatorio(item, saida);
+    for (const item of no) linhasDoRelatorio(item, campoChave, saida);
   } else if (no && typeof no === "object") {
     const objeto = no as Record<string, unknown>;
-    if ("time" in objeto && "date" in objeto) saida.push(objeto as BatidaPontomais);
-    else if ("data" in objeto) linhasDoRelatorio(objeto.data, saida);
+    if (campoChave in objeto) saida.push(objeto as T);
+    else if ("data" in objeto) linhasDoRelatorio(objeto.data, campoChave, saida);
   }
   return saida;
 }
@@ -216,7 +222,8 @@ export async function buscarMarcacoesDoDia(data: string): Promise<MarcacaoPonto[
   // Agrupa as batidas do dia por CPF.
   const batidasPorCpf = new Map<string, { hora: string; tipo: "entrada" | "saida" | null }[]>();
   let semCadastro = 0;
-  for (const linha of linhasDoRelatorio((relatorio as { data?: unknown })?.data)) {
+  const linhas = linhasDoRelatorio<BatidaPontomais>((relatorio as { data?: unknown })?.data, "time");
+  for (const linha of linhas) {
     if (converterData(linha.date) !== data) continue;
     const hora = converterHora(linha.time);
     if (!hora) continue;
@@ -240,6 +247,45 @@ export async function buscarMarcacoesDoDia(data: string): Promise<MarcacaoPonto[
     data,
     ...organizarBatidas([...batidas].sort((a, b) => a.hora.localeCompare(b.hora))),
   }));
+}
+
+/**
+ * Data de admissão de cada colaborador ativo, pelo relatório "Colaboradores".
+ * Se o mesmo CPF aparecer mais de uma vez (pessoa readmitida), vale a admissão mais recente.
+ * Lança ErroPonto se não conseguir.
+ */
+export async function buscarDatasDeAdmissao(): Promise<AdmissaoPonto[]> {
+  const porCpf = new Map<string, string>();
+  for (let pagina = 1; pagina <= MAXIMO_DE_PAGINAS; pagina++) {
+    const resposta = (await chamarPontomais("/external_api/v1/reports/employees", {
+      metodo: "POST",
+      corpo: {
+        report: {
+          group_by: "",
+          row_filters: "",
+          columns: "name,cpf,admission_date",
+          format: "json",
+          page: pagina,
+          per_page: POR_PAGINA_RELATORIO,
+        },
+      },
+    })) as { data?: unknown; heading?: { page?: unknown } };
+    if (!resposta || typeof resposta !== "object" || !("data" in resposta)) {
+      throw new ErroPonto("O Pontomais devolveu o relatório de colaboradores num formato inesperado.");
+    }
+    const linhas = linhasDoRelatorio<LinhaColaboradorPontomais>(resposta.data, "admission_date");
+    for (const linha of linhas) {
+      const cpf = soDigitos(linha.cpf);
+      const data = converterData(linha.admission_date);
+      if (cpf.length !== 11 || !data) continue;
+      const anterior = porCpf.get(cpf);
+      if (!anterior || data > anterior) porCpf.set(cpf, data);
+    }
+    // "heading.page" vem como "1/3" (página atual / total de páginas).
+    const total = String(resposta.heading?.page ?? "").match(/\/\s*(\d+)/);
+    if (total ? pagina >= Number(total[1]) : linhas.length < POR_PAGINA_RELATORIO) break;
+  }
+  return Array.from(porCpf, ([cpf, dataAdmissao]) => ({ cpf, dataAdmissao }));
 }
 
 // ---------------------------------------------------------------------------

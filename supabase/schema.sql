@@ -22,6 +22,9 @@ alter table funcionarios add column if not exists sexo text check (sexo in ('F',
 -- As telas mostram só isto; o CPF completo fica no servidor.
 alter table funcionarios
   add column if not exists cpf_final text generated always as (right(cpf, 4)) stored;
+-- Data em que a pessoa entrou no restaurante (mostrada no crachá da tela Início).
+-- Pode vir do Pontomais (data de admissão) ou ser preenchida na tela Equipe.
+alter table funcionarios add column if not exists data_admissao date;
 
 -- Conferências do cadastro (o site confere as mesmas regras em src/lib/validacao.ts)
 -- Nome: entre 2 e 60 letras
@@ -36,6 +39,10 @@ alter table funcionarios add constraint funcionarios_telefone_formato
 alter table funcionarios drop constraint if exists funcionarios_cpf_formato;
 alter table funcionarios add constraint funcionarios_cpf_formato
   check (cpf is null or cpf ~ '^[0-9]{11}$');
+-- Data de entrada: nem no futuro, nem antes de 1950
+alter table funcionarios drop constraint if exists funcionarios_admissao_valida;
+alter table funcionarios add constraint funcionarios_admissao_valida
+  check (data_admissao is null or data_admissao between date '1950-01-01' and current_date);
 
 -- Conta dos dígitos verificadores do CPF
 create or replace function cpf_valido(cpf text) returns boolean

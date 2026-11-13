@@ -11,20 +11,23 @@ export type Funcionario = {
   ativo: boolean;
   // "F" = feminino, "M" = masculino, null = não informado (usado na regra dos domingos)
   sexo?: "F" | "M" | null;
-  // Data do cadastro (o banco preenche sozinho).
+  // Data do cadastro no sistema (o banco preenche sozinho).
   criado_em?: string;
+  // Data em que a pessoa entrou no restaurante, "AAAA-MM-DD" (Pontomais ou tela Equipe).
+  data_admissao?: string | null;
 };
 
 // O que cada tela busca de um funcionário: só o que ela mostra ou usa.
 // O CPF completo nunca vai para o navegador; quem precisa dele é o servidor
 // (rota da conferência de ponto).
-export const CAMPOS_FUNCIONARIO_INICIO = "id, nome, funcao, criado_em";
-export type FuncionarioInicio = Pick<Funcionario, "id" | "nome" | "funcao" | "criado_em">;
+export const CAMPOS_FUNCIONARIO_INICIO = "id, nome, funcao, data_admissao";
+export type FuncionarioInicio = Pick<Funcionario, "id" | "nome" | "funcao" | "data_admissao">;
 
-export const CAMPOS_FUNCIONARIO_EQUIPE = "id, nome, funcao, telefone, ativo, sexo, cpf_final";
+export const CAMPOS_FUNCIONARIO_EQUIPE =
+  "id, nome, funcao, telefone, ativo, sexo, cpf_final, data_admissao";
 export type FuncionarioEquipe = Pick<
   Funcionario,
-  "id" | "nome" | "funcao" | "telefone" | "ativo" | "sexo" | "cpf_final"
+  "id" | "nome" | "funcao" | "telefone" | "ativo" | "sexo" | "cpf_final" | "data_admissao"
 >;
 
 export const CAMPOS_FUNCIONARIO_ESCALA = "id, nome, funcao, ativo, sexo";
@@ -109,4 +112,19 @@ export type RespostaSugestao = {
   escalas: EscalaSugerida[];
   // Recados da IA: o que não deu para cumprir e por quê.
   observacoes: string[];
+};
+
+// Data de admissão vinda do sistema de ponto (formato interno, devolvido por
+// src/lib/integracoes/ponto.ts). O CPF só circula no servidor.
+export type AdmissaoPonto = {
+  cpf: string; // só os 11 números
+  dataAdmissao: string; // "AAAA-MM-DD"
+};
+
+// Resumo que a rota /api/ponto/admissoes devolve para a tela Equipe.
+export type ResumoAdmissoes = {
+  preenchidas: number; // datas gravadas agora
+  jaTinham: number; // já tinham data (não mexemos)
+  semCpf: number; // ativos sem CPF cadastrado aqui
+  naoEncontrados: number; // com CPF, mas sem cadastro ativo no Pontomais
 };

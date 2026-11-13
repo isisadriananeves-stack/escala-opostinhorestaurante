@@ -2,24 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
+import { hojeISO } from "@/lib/datas";
 import {
   CAMPOS_FUNCIONARIO_EQUIPE,
   FUNCOES_PADRAO,
   type FuncionarioEquipe as Funcionario,
+  type ResumoAdmissoes,
 } from "@/lib/tipos";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
 import {
   NOME_MAXIMO,
+  erroAdmissao,
   erroCpf,
   erroNome,
   erroTelefone,
   formatarTelefone,
   limparNome,
   mensagemDoBanco,
+  mesAno,
 } from "@/lib/validacao";
 
 // Avisos que aparecem embaixo de cada campo.
-type ErrosDoFormulario = { nome?: string; telefone?: string; cpf?: string };
+type ErrosDoFormulario = { nome?: string; telefone?: string; cpf?: string; admissao?: string };
 
 // Dados do formulário de adicionar/editar. Sem id = funcionário novo.
 type Formulario = {
@@ -32,6 +36,8 @@ type Formulario = {
   // 4 últimos números do CPF já cadastrado (só para mostrar).
   cpfFinalAtual: string | null;
   sexo: "" | "F" | "M";
+  // Data de entrada no restaurante, "AAAA-MM-DD" (vazio = não informada).
+  dataAdmissao: string;
 };
 
 const FORMULARIO_VAZIO: Formulario = {
@@ -41,6 +47,7 @@ const FORMULARIO_VAZIO: Formulario = {
   cpf: "",
   cpfFinalAtual: null,
   sexo: "",
+  dataAdmissao: "",
 };
 
 /** "12345678901" -> "123.456.789-01" (deixa como está se não tiver 11 dígitos). */
@@ -50,6 +57,41 @@ function formatarCpf(cpf: string | null): string {
 }
 
 const ROTULO_SEXO = { F: "Feminino", M: "Masculino" } as const;
+
+/** Pede ao servidor para buscar no Pontomais as datas de entrada que faltam. */
+async function buscarDatasNoPontomais(): Promise<ResumoAdmissoes> {
+  const { data: sessao } = await supabase().auth.getSession();
+  const token = sessao.session?.access_token;
+  let resposta: Response;
+  try {
+    resposta = await fetch("/api/ponto/admissoes", {
+      method: "POST",
+      cache: "no-store",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new Error("Sem conexão com o servidor. Tente de novo.");
+  }
+  const corpo = await resposta.json().catch(() => null);
+  if (!resposta.ok) {
+    throw new Error(corpo?.erro ?? `O servidor respondeu com erro ${resposta.status}.`);
+  }
+  return corpo as ResumoAdmissoes;
+}
+
+function textoDoResumo(r: ResumoAdmissoes): string {
+  const partes = [
+    `${r.preenchidas} ${r.preenchidas === 1 ? "data preenchida" : "datas preenchidas"}`,
+  ];
+  if (r.jaTinham > 0) partes.push(`${r.jaTinham} já ${r.jaTinham === 1 ? "tinha" : "tinham"} data`);
+  if (r.naoEncontrados > 0) {
+    partes.push(
+      `${r.naoEncontrados} não ${r.naoEncontrados === 1 ? "encontrada" : "encontradas"} no Pontomais (CPF diferente ou fora do Pontomais)`,
+    );
+  }
+  if (r.semCpf > 0) partes.push(`${r.semCpf} sem CPF cadastrado aqui`);
+  return partes.join(" · ") + ".";
+}
 
 async function buscarFuncionarios(): Promise<Funcionario[]> {
   const { data, error } = await supabase()
@@ -69,6 +111,10 @@ export default function Equipe() {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [erros, setErros] = useState<ErrosDoFormulario>({});
+  const [buscandoDatas, setBuscandoDatas] = useState(false);
+  const [resultadoDatas, setResultadoDatas] = useState<{ ok: boolean; texto: string } | null>(
+    null,
+  );
 
   // Recarrega a lista depois de salvar, desativar ou reativar.
   async function carregar() {
@@ -95,6 +141,21 @@ export default function Equipe() {
 
   const ativos = funcionarios.filter((f) => f.ativo);
   const inativos = funcionarios.filter((f) => !f.ativo);
+  const semDataDeEntrada = ativos.filter((f) => !f.data_admissao).length;
+
+  async function puxarDatas() {
+    setBuscandoDatas(true);
+    setResultadoDatas(null);
+    try {
+      const resumo = await buscarDatasNoPontomais();
+      setResultadoDatas({ ok: true, texto: textoDoResumo(resumo) });
+      await carregar();
+    } catch (e) {
+      setResultadoDatas({ ok: false, texto: mensagemDeErro(e) });
+    } finally {
+      setBuscandoDatas(false);
+    }
+  }
 
   function abrirNovo() {
     setAviso(null);
@@ -113,6 +174,7 @@ export default function Equipe() {
       cpf: "",
       cpfFinalAtual: f.cpf_final,
       sexo: f.sexo ?? "",
+      dataAdmissao: f.data_admissao ?? "",
     });
     // O formulário fica no topo da tela: rola até ele.
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -129,9 +191,10 @@ export default function Equipe() {
       nome: erroNome(nome) ?? undefined,
       telefone: erroTelefone(telefone) ?? undefined,
       cpf: erroCpf(cpf) ?? undefined,
+      admissao: erroAdmissao(formulario.dataAdmissao, hojeISO()) ?? undefined,
     };
     setErros(novosErros);
-    if (novosErros.nome || novosErros.telefone || novosErros.cpf) {
+    if (novosErros.nome || novosErros.telefone || novosErros.cpf || novosErros.admissao) {
       setAviso("Confira os campos marcados.");
       return;
     }
@@ -147,6 +210,7 @@ export default function Equipe() {
         funcao,
         telefone: telefone || null,
         sexo: formulario.sexo || null,
+        data_admissao: formulario.dataAdmissao || null,
         // Na edição, CPF vazio = manter o atual (o navegador nem conhece o CPF completo).
         ...(cpf ? { cpf } : formulario.id ? {} : { cpf: null }),
       };
@@ -197,7 +261,7 @@ export default function Equipe() {
       {erro && <AvisoErro mensagem={erro} />}
 
       {formulario && (
-        <form onSubmit={salvar} className="cartao space-y-4">
+        <form onSubmit={salvar} noValidate className="cartao space-y-4">
           <h2 className="text-lg font-semibold">
             {formulario.id ? "Editar funcionário" : "Novo funcionário"}
           </h2>
@@ -298,6 +362,35 @@ export default function Equipe() {
               })}
             </div>
           </fieldset>
+          <label className="block">
+            <span className="mb-1 block font-medium">No Postinho desde</span>
+            <span className="mb-2 block text-sm text-neutral-600">
+              Data em que a pessoa entrou no restaurante. Aparece no crachá da tela Início.
+            </span>
+            <input
+              className="campo"
+              type="date"
+              min="1950-01-01"
+              max={hojeISO()}
+              aria-invalid={Boolean(erros.admissao)}
+              value={formulario.dataAdmissao}
+              onChange={(e) => {
+                setFormulario({ ...formulario, dataAdmissao: e.target.value });
+                setErros({ ...erros, admissao: undefined });
+              }}
+            />
+            {formulario.dataAdmissao && (
+              <button
+                type="button"
+                className="mt-2 text-sm font-medium underline"
+                style={{ color: "var(--cor-principal)" }}
+                onClick={() => setFormulario({ ...formulario, dataAdmissao: "" })}
+              >
+                Apagar a data
+              </button>
+            )}
+            <AvisoCampo texto={erros.admissao} />
+          </label>
           {aviso && (
             <p className="text-red-700" role="alert">
               {aviso}
@@ -317,6 +410,39 @@ export default function Equipe() {
             </button>
           </div>
         </form>
+      )}
+
+      {!carregando && !formulario && (semDataDeEntrada > 0 || resultadoDatas) && (
+        <section className="cartao space-y-3">
+          {semDataDeEntrada > 0 && (
+            <p>
+              <strong>
+                {semDataDeEntrada} {semDataDeEntrada === 1 ? "pessoa está" : "pessoas estão"} sem a
+                data de entrada.
+              </strong>{" "}
+              Dá para buscar a data de admissão no Pontomais (pelo CPF) ou preencher em
+              &quot;Editar&quot;.
+            </p>
+          )}
+          {resultadoDatas && (
+            <p
+              className={resultadoDatas.ok ? "text-green-700" : "text-red-700"}
+              role={resultadoDatas.ok ? "status" : "alert"}
+            >
+              {resultadoDatas.texto}
+            </p>
+          )}
+          {semDataDeEntrada > 0 && (
+            <button
+              type="button"
+              className="botao w-full"
+              onClick={puxarDatas}
+              disabled={buscandoDatas}
+            >
+              {buscandoDatas ? "Buscando no Pontomais..." : "Buscar datas no Pontomais"}
+            </button>
+          )}
+        </section>
       )}
 
       {carregando ? (
@@ -402,6 +528,11 @@ function CartaoFuncionario({ funcionario }: { funcionario: Funcionario }) {
       </p>
       <p className="text-sm text-neutral-600">
         {funcionario.cpf_final ? `CPF final ${funcionario.cpf_final}` : "CPF não informado"}
+        {funcionario.data_admissao ? (
+          <span> · no Postinho desde {mesAno(funcionario.data_admissao)}</span>
+        ) : (
+          <span className="text-amber-700"> · data de entrada não informada</span>
+        )}
       </p>
       {funcionario.telefone ? (
         <a
