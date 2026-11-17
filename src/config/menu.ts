@@ -4,4 +4,5 @@ export const menu: { rotulo: string; href: string }[] = [
   { rotulo: "Escala da semana", href: "/escala" },
   { rotulo: "Equipe", href: "/equipe" },
   { rotulo: "Conferência", href: "/conferencia" },
+  { rotulo: "Folgas", href: "/folgas" },
 ];

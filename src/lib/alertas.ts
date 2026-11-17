@@ -15,6 +15,8 @@ export type Alerta = {
   curto: string;
   // Quadros (dia + turno) marcados em vermelho por este alerta.
   celulas: { data: string; turnoId: string }[];
+  // Pessoa do alerta (folga, domingo e fecha e abre), usada na tela Folgas.
+  funcionarioId?: string;
 };
 
 // Nome de cada tipo de alerta, usado nas listas da tela.
@@ -85,6 +87,14 @@ export function periodoParaConferir(inicioSemana: string): { inicio: string; fim
     inicio: candidatosInicio.sort()[0],
     fim: candidatosFim.sort()[candidatosFim.length - 1],
   };
+}
+
+/**
+ * Dias de folga de uma pessoa na semana: os dias sem nenhum turno.
+ * Usada nos alertas da Escala e na tela Folgas, para as duas contarem igual.
+ */
+export function diasDeFolga(dias: string[], diasTrabalhados: Set<string> | undefined): string[] {
+  return dias.filter((d) => !diasTrabalhados?.has(d));
 }
 
 /** Regra de mínimo que vale para o turno nesse dia (ou undefined). */
@@ -185,6 +195,7 @@ export function calcularAlertas(params: {
           texto: `${f.nome} fecha ${rotuloDia(diaFecha)} e abre ${rotuloDia(diaAbre)}`,
           curto: `${primeiroNome(f.nome)}: fecha e abre`,
           celulas,
+          funcionarioId: f.id,
         });
       }
     }
@@ -193,14 +204,14 @@ export function calcularAlertas(params: {
   // 3. Folgas na semana (dias sem nenhum turno).
   const ativos = funcionarios.filter((f) => f.ativo);
   for (const f of ativos) {
-    const trabalhados = dias.filter((d) => diasDaPessoa.get(f.id)?.has(d)).length;
-    const folgas = 7 - trabalhados;
+    const folgas = diasDeFolga(dias, diasDaPessoa.get(f.id)).length;
     if (folgas < regras.folgasPorSemana) {
       alertas.push({
         tipo: "folga",
         texto: `${f.nome}: ${folgas} ${folgas === 1 ? "folga" : "folgas"} na semana (mínimo ${regras.folgasPorSemana})`,
         curto: "",
         celulas: [],
+        funcionarioId: f.id,
       });
     }
   }
@@ -222,6 +233,7 @@ export function calcularAlertas(params: {
           texto: `${f.nome} trabalha dois domingos seguidos (${diaMes(domingoAnterior)} e ${diaMes(domingo)})`,
           curto: `${primeiroNome(f.nome)}: 2º domingo seguido`,
           celulas: celulasDoDomingo(f.id),
+          funcionarioId: f.id,
         });
       }
     }
@@ -241,6 +253,7 @@ export function calcularAlertas(params: {
           texto: `${f.nome} está sem domingo de folga em ${mes} (mínimo ${folgaHomens})`,
           curto: `${primeiroNome(f.nome)}: sem domingo de folga no mês`,
           celulas: celulasDoDomingo(f.id),
+          funcionarioId: f.id,
         });
       }
     }

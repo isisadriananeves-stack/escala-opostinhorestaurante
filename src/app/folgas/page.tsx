@@ -1,0 +1,333 @@
+"use client";
+
+// Folgas da semana de cada funcionário ativo (só para ver; quem muda é a Escala da semana).
+// Folga = dia sem nenhum turno (mesma conta dos alertas da Escala, em src/lib/alertas.ts).
+
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { supabase, variaveisConfiguradas } from "@/lib/supabase";
+import {
+  CAMPOS_FUNCIONARIO_ESCALA,
+  type Escala,
+  type FuncionarioEscala as Funcionario,
+  type Turno,
+} from "@/lib/tipos";
+import {
+  DIAS_SEMANA_CURTO,
+  diaMes,
+  diasDaSemana,
+  hojeISO,
+  inicioDaSemana,
+  paraData,
+  somarDias,
+} from "@/lib/datas";
+import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
+import { REGRAS } from "@/config/regras";
+import { calcularAlertas, diasDeFolga, periodoParaConferir, type Alerta } from "@/lib/alertas";
+
+const CAMPOS_ESCALA = "id, data, turno_id, funcionario_id";
+
+// Semana e dias ao redor (os domingos do mês entram por causa das regras de domingo).
+async function buscarEscalas(inicioSemana: string): Promise<Escala[]> {
+  const { inicio, fim } = periodoParaConferir(inicioSemana);
+  const { data, error } = await supabase()
+    .from("escalas")
+    .select(CAMPOS_ESCALA)
+    .gte("data", inicio)
+    .lte("data", fim);
+  if (error) throw error;
+  return data ?? [];
+}
+
+// A data de hoje vem do celular (no servidor não há "hoje": fica vazio).
+const nadaParaOuvir = () => () => {};
+function useHoje(): string {
+  return useSyncExternalStore(nadaParaOuvir, hojeISO, () => "");
+}
+
+/** "Almoço" -> "Alm". */
+function abreviar(nomeTurno: string): string {
+  return nomeTurno.trim().slice(0, 3);
+}
+
+/** "Qua", "Qua e Dom", "Seg, Qua e Dom". */
+function listarDias(datas: string[]): string {
+  const nomes = datas.map((d) => DIAS_SEMANA_CURTO[paraData(d).getDay()]);
+  if (nomes.length <= 1) return nomes.join("");
+  return `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+}
+
+type Linha = {
+  funcionario: Funcionario;
+  // Turnos de cada dia da semana (vazio = folga).
+  turnosPorDia: Turno[][];
+  folgas: string[];
+  falta: number;
+  folgaNoDomingo: boolean;
+  avisosDomingo: string[];
+};
+
+export default function Folgas() {
+  const semVariaveis = !variaveisConfiguradas();
+  const hoje = useHoje();
+  const [deslocamento, setDeslocamento] = useState(0);
+  const inicioSemana = hoje ? somarDias(inicioDaSemana(hoje), 7 * deslocamento) : null;
+
+  const [turnos, setTurnos] = useState<Turno[]>([]);
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
+  const [escalas, setEscalas] = useState<Escala[]>([]);
+  const [semanaCarregada, setSemanaCarregada] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregando = !cadastrosCarregados || semanaCarregada !== inicioSemana;
+
+  // Turnos e funcionários: carregados uma vez.
+  useEffect(() => {
+    if (semVariaveis) return;
+    const db = supabase();
+    Promise.all([
+      db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
+      db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).order("nome"),
+    ])
+      .then(([t, f]) => {
+        if (t.error) throw t.error;
+        if (f.error) throw f.error;
+        setTurnos(t.data ?? []);
+        setFuncionarios(f.data ?? []);
+      })
+      .catch((e) => setErro(mensagemDeErro(e)))
+      .finally(() => setCadastrosCarregados(true));
+  }, [semVariaveis]);
+
+  // Escala da semana visível: recarrega ao trocar de semana.
+  useEffect(() => {
+    if (semVariaveis || !inicioSemana) return;
+    let valido = true; // ignora respostas de uma semana que já saiu da tela
+    buscarEscalas(inicioSemana)
+      .then((lista) => {
+        if (!valido) return;
+        setEscalas(lista);
+        setErro(null);
+      })
+      .catch((e) => {
+        if (valido) setErro(mensagemDeErro(e));
+      })
+      .finally(() => {
+        if (valido) setSemanaCarregada(inicioSemana);
+      });
+    return () => {
+      valido = false;
+    };
+  }, [inicioSemana, semVariaveis]);
+
+  if (semVariaveis) return <AvisoSemVariaveis />;
+
+  const dias = inicioSemana ? diasDaSemana(inicioSemana) : [];
+  const domingo = dias[0];
+  const minimo = REGRAS.folgasPorSemana;
+
+  // Alertas de domingo da Escala, por pessoa.
+  const avisosDomingoPorPessoa = new Map<string, Alerta[]>();
+  let semSexo: Funcionario[] = [];
+  if (inicioSemana && !carregando) {
+    const resultado = calcularAlertas({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas });
+    semSexo = resultado.semSexo;
+    for (const a of resultado.alertas) {
+      if (a.tipo !== "domingo" || !a.funcionarioId) continue;
+      avisosDomingoPorPessoa.set(a.funcionarioId, [
+        ...(avisosDomingoPorPessoa.get(a.funcionarioId) ?? []),
+        a,
+      ]);
+    }
+  }
+  const idsSemSexo = new Set(semSexo.map((f) => f.id));
+
+  const turnoPorId = new Map(turnos.map((t) => [t.id, t]));
+  const linhas: Linha[] = funcionarios
+    .filter((f) => f.ativo)
+    .map((f) => {
+      const minhas = escalas.filter((e) => e.funcionario_id === f.id);
+      const turnosPorDia = dias.map((d) =>
+        minhas
+          .filter((e) => e.data === d)
+          .map((e) => turnoPorId.get(e.turno_id))
+          .filter((t): t is Turno => Boolean(t))
+          .sort((a, b) => a.ordem - b.ordem),
+      );
+      const folgas = diasDeFolga(dias, new Set(minhas.map((e) => e.data)));
+      return {
+        funcionario: f,
+        turnosPorDia,
+        folgas,
+        falta: Math.max(0, minimo - folgas.length),
+        folgaNoDomingo: folgas.includes(domingo),
+        avisosDomingo: (avisosDomingoPorPessoa.get(f.id) ?? []).map((a) =>
+          a.texto.replace(f.nome, "").trim(),
+        ),
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.folgas.length - b.folgas.length ||
+        a.funcionario.nome.localeCompare(b.funcionario.nome, "pt-BR"),
+    );
+
+  const abaixoDoMinimo = linhas.filter((l) => l.falta > 0).length;
+  const folgamNoDomingo = linhas.filter((l) => l.folgaNoDomingo).length;
+  const tituloSemana = inicioSemana
+    ? `${diaMes(inicioSemana)} a ${diaMes(somarDias(inicioSemana, 6))}`
+    : "";
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-bold">Folgas da semana</h1>
+        <p className="text-lg text-neutral-700">{tituloSemana}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
+          onClick={() => setDeslocamento((d) => d - 1)}
+          disabled={!inicioSemana}
+          aria-label="Semana anterior"
+        >
+          ◀ Anterior
+        </button>
+        <button
+          type="button"
+          className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
+          onClick={() => setDeslocamento(0)}
+          disabled={!inicioSemana || deslocamento === 0}
+        >
+          Hoje
+        </button>
+        <button
+          type="button"
+          className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
+          onClick={() => setDeslocamento((d) => d + 1)}
+          disabled={!inicioSemana}
+          aria-label="Próxima semana"
+        >
+          Próxima ▶
+        </button>
+      </div>
+
+      {erro && <AvisoErro mensagem={erro} />}
+
+      {carregando ? (
+        <p className="text-neutral-600">Carregando folgas...</p>
+      ) : linhas.length === 0 ? (
+        <p className="cartao text-neutral-600">Nenhum funcionário ativo.</p>
+      ) : (
+        <>
+          <section className="cartao space-y-1" aria-label="Resumo da semana">
+            {abaixoDoMinimo > 0 ? (
+              <p className="text-lg font-semibold text-red-800">
+                ⚠ {abaixoDoMinimo} {abaixoDoMinimo === 1 ? "pessoa" : "pessoas"} com menos de{" "}
+                {minimo} folgas
+              </p>
+            ) : (
+              <p className="text-lg font-semibold text-green-800">
+                ✓ Todos com pelo menos {minimo} folgas
+              </p>
+            )}
+            <p className="text-neutral-700">
+              Folgam no domingo: <strong>{folgamNoDomingo}</strong> de {linhas.length}
+            </p>
+            <p className="text-sm text-neutral-600">
+              Folga é dia sem nenhum turno. Para mudar, use a Escala da semana.
+            </p>
+          </section>
+
+          <ul className="space-y-3">
+            {linhas.map((l) => (
+              <CartaoFolgas
+                key={l.funcionario.id}
+                linha={l}
+                dias={dias}
+                semSexo={idsSemSexo.has(l.funcionario.id)}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CartaoFolgas({ linha, dias, semSexo }: { linha: Linha; dias: string[]; semSexo: boolean }) {
+  const { funcionario, turnosPorDia, folgas, falta, folgaNoDomingo, avisosDomingo } = linha;
+  const qtd = folgas.length;
+  return (
+    <li className={`cartao space-y-3 ${falta > 0 ? "border-red-300 bg-red-50! shadow-none!" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-lg font-semibold">{funcionario.nome}</p>
+          <p className="text-neutral-700">{funcionario.funcao}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={`titulo text-xl ${falta > 0 ? "text-red-800" : "text-green-800"}`}>
+            {qtd} {qtd === 1 ? "folga" : "folgas"}
+          </p>
+          {falta > 0 && (
+            <p className="text-sm font-semibold text-red-800">
+              falta {falta} {falta === 1 ? "folga" : "folgas"}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <ol className="grid grid-cols-7 gap-1" aria-label={`Semana de ${funcionario.nome}`}>
+        {dias.map((dia, i) => {
+          const turnosDoDia = turnosPorDia[i] ?? [];
+          const folga = turnosDoDia.length === 0;
+          const ehDomingo = i === 0;
+          const nomeDia = DIAS_SEMANA_CURTO[paraData(dia).getDay()];
+          return (
+            <li
+              key={dia}
+              aria-label={`${nomeDia} ${diaMes(dia)}: ${
+                folga ? "folga" : turnosDoDia.map((t) => t.nome).join(" e ")
+              }`}
+              className={`flex min-h-[64px] min-w-0 flex-col items-center rounded-md border px-0 py-1 text-center ${
+                folga
+                  ? "border-green-400 bg-green-50 text-green-900"
+                  : "border-neutral-200 bg-white text-neutral-700"
+              } ${ehDomingo ? "ring-2 ring-detalhe ring-offset-1" : ""}`}
+            >
+              <span className="text-xs font-semibold">{nomeDia}</span>
+              <span className="text-[11px] text-neutral-500">{diaMes(dia).slice(0, 2)}</span>
+              <span className="mt-auto text-[10px] font-semibold leading-tight min-[360px]:text-xs">
+                {folga
+                  ? "Folga"
+                  : turnosDoDia.map((t) => (
+                      <span key={t.id} className="block">
+                        {abreviar(t.nome)}
+                      </span>
+                    ))}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {qtd > 0 && qtd < 7 && <p className="text-sm text-neutral-700">Folga: {listarDias(folgas)}</p>}
+
+      <div className="space-y-1 text-sm">
+        <p className={folgaNoDomingo ? "font-semibold text-green-800" : "text-neutral-700"}>
+          {folgaNoDomingo ? "✓ Folga no domingo" : "Trabalha no domingo"}
+        </p>
+        {avisosDomingo.map((texto) => (
+          <p key={texto} className="font-semibold text-red-800">
+            ⚠ Domingo: {texto}
+          </p>
+        ))}
+        {semSexo && (
+          <p className="text-amber-700">Sexo não informado: a regra do domingo não é conferida.</p>
+        )}
+      </div>
+    </li>
+  );
+}
