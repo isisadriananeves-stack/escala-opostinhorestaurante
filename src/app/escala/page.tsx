@@ -295,7 +295,7 @@ export default function EscalaDaSemana() {
       <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
-          className="botao-secundario whitespace-nowrap px-1"
+          className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
           onClick={() => setDeslocamento((d) => d - 1)}
           disabled={!inicioSemana || sugerindo}
           aria-label="Semana anterior"
@@ -304,7 +304,7 @@ export default function EscalaDaSemana() {
         </button>
         <button
           type="button"
-          className="botao-secundario whitespace-nowrap px-1"
+          className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
           onClick={() => setDeslocamento(0)}
           disabled={!inicioSemana || ehSemanaAtual || sugerindo}
         >
@@ -312,7 +312,7 @@ export default function EscalaDaSemana() {
         </button>
         <button
           type="button"
-          className="botao-secundario whitespace-nowrap px-1"
+          className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
           onClick={() => setDeslocamento((d) => d + 1)}
           disabled={!inicioSemana || sugerindo}
           aria-label="Próxima semana"
