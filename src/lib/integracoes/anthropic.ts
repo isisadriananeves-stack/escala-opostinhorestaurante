@@ -20,7 +20,7 @@ const MODELO = "claude-opus-5-5";
 
 export type PedidoSugestao = {
   regras: RegrasDaCasa;
-  segunda: string;
+  inicioSemana: string;
   turnos: Turno[];
   // Só quem está ativo. O nome fica aqui no servidor: serve só para os recados.
   funcionarios: FuncionarioEscala[];
@@ -62,7 +62,7 @@ function descreverRegras(regras: RegrasDaCasa): string {
   }
   linhas.push("");
   linhas.push(
-    `FOLGAS: cada pessoa precisa ter pelo menos ${regras.folgasPorSemana} dias sem nenhum turno na semana (segunda a domingo).`,
+    `FOLGAS: cada pessoa precisa ter pelo menos ${regras.folgasPorSemana} dias sem nenhum turno na semana (domingo a sábado).`,
   );
   if (regras.domingos.mulheresEmDomingosAlternados) {
     linhas.push(
@@ -76,7 +76,7 @@ function descreverRegras(regras: RegrasDaCasa): string {
   }
   if (regras.fecharEAbrir.proibido) {
     linhas.push(
-      `FECHA E ABRE: quem trabalha no ${regras.fecharEAbrir.turnoQueFecha} de um dia não pode trabalhar no ${regras.fecharEAbrir.turnoQueAbre} do dia seguinte (vale também do domingo anterior para a segunda, e do domingo desta semana para a segunda seguinte, que está no histórico).`,
+      `FECHA E ABRE: quem trabalha no ${regras.fecharEAbrir.turnoQueFecha} de um dia não pode trabalhar no ${regras.fecharEAbrir.turnoQueAbre} do dia seguinte (vale também do sábado anterior para o domingo desta semana, e do último sábado desta semana para o domingo seguinte, que está no histórico).`,
     );
   }
   return linhas.join("\n");
@@ -126,8 +126,8 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     throw new ErroIA("A variável ANTHROPIC_API_KEY não está configurada na Vercel.");
   }
 
-  const { regras, segunda, turnos, funcionarios, escalas } = pedido;
-  const dias = diasDaSemana(segunda);
+  const { regras, inicioSemana, turnos, funcionarios, escalas } = pedido;
+  const dias = diasDaSemana(inicioSemana);
   const diasSet = new Set(dias);
 
   // Códigos curtos no lugar dos ids do banco.

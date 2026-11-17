@@ -108,7 +108,7 @@ export type EscalaSugerida = Pick<Escala, "data" | "turno_id" | "funcionario_id"
 
 // Resposta da rota /api/escala/sugerir.
 export type RespostaSugestao = {
-  // A semana inteira proposta (segunda a domingo), já conferida pelo servidor.
+  // A semana inteira proposta (domingo a sábado), já conferida pelo servidor.
   escalas: EscalaSugerida[];
   // Recados da IA: o que não deu para cumprir e por quê.
   observacoes: string[];

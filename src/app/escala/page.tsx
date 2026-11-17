@@ -38,9 +38,9 @@ type CelulaAberta = { data: string; turno: Turno };
 const CAMPOS_ESCALA = "id, data, turno_id, funcionario_id";
 
 // Carrega a semana e os dias ao redor que as regras precisam
-// (domingo anterior, segunda seguinte e os domingos do mês).
-async function buscarEscalas(segunda: string): Promise<Escala[]> {
-  const { inicio, fim } = periodoParaConferir(segunda);
+// (domingo e sábado anteriores, domingo seguinte e os domingos do mês).
+async function buscarEscalas(inicioSemana: string): Promise<Escala[]> {
+  const { inicio, fim } = periodoParaConferir(inicioSemana);
   const { data, error } = await supabase()
     .from("escalas")
     .select(CAMPOS_ESCALA)
@@ -51,7 +51,7 @@ async function buscarEscalas(segunda: string): Promise<Escala[]> {
 }
 
 // Pede à IA (pela rota do servidor) uma sugestão para a semana. Não salva nada.
-async function pedirSugestao(segunda: string): Promise<RespostaSugestao> {
+async function pedirSugestao(inicioSemana: string): Promise<RespostaSugestao> {
   // Envia o "crachá" do login: a rota só responde para quem está conectado.
   const { data: sessao } = await supabase().auth.getSession();
   const token = sessao.session?.access_token;
@@ -64,7 +64,7 @@ async function pedirSugestao(segunda: string): Promise<RespostaSugestao> {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ segunda }),
+      body: JSON.stringify({ inicioSemana }),
     });
   } catch {
     throw new Error("Sem conexão com o servidor. Confira a internet e tente de novo.");
@@ -94,7 +94,7 @@ export default function EscalaDaSemana() {
   const hoje = useHoje();
   // Quantas semanas para frente (+) ou para trás (-) da semana atual.
   const [deslocamento, setDeslocamento] = useState(0);
-  const segunda = hoje ? somarDias(inicioDaSemana(hoje), 7 * deslocamento) : null;
+  const inicioSemana = hoje ? somarDias(inicioDaSemana(hoje), 7 * deslocamento) : null;
 
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
@@ -109,7 +109,7 @@ export default function EscalaDaSemana() {
   // Sugestão da IA: fica na tela até o dono aprovar ou descartar.
   const [sugerindo, setSugerindo] = useState(false);
   const [erroSugestao, setErroSugestao] = useState<string | null>(null);
-  const [proposta, setProposta] = useState<{ segunda: string; dados: RespostaSugestao } | null>(
+  const [proposta, setProposta] = useState<{ inicioSemana: string; dados: RespostaSugestao } | null>(
     null,
   );
   const [salvandoProposta, setSalvandoProposta] = useState(false);
@@ -119,7 +119,7 @@ export default function EscalaDaSemana() {
     setErroProposta(null);
   }, []);
 
-  const carregando = !cadastrosCarregados || semanaCarregada !== segunda;
+  const carregando = !cadastrosCarregados || semanaCarregada !== inicioSemana;
 
   // Turnos e funcionários: carregados uma vez.
   useEffect(() => {
@@ -150,9 +150,9 @@ export default function EscalaDaSemana() {
 
   // Escala da semana visível: recarrega ao trocar de semana.
   useEffect(() => {
-    if (semVariaveis || !segunda) return;
+    if (semVariaveis || !inicioSemana) return;
     let valido = true; // ignora respostas de uma semana que já saiu da tela
-    buscarEscalas(segunda)
+    buscarEscalas(inicioSemana)
       .then((lista) => {
         if (!valido) return;
         setEscalas(lista);
@@ -162,14 +162,14 @@ export default function EscalaDaSemana() {
         if (valido) setErro(mensagemDeErro(e));
       })
       .finally(() => {
-        if (valido) setSemanaCarregada(segunda);
+        if (valido) setSemanaCarregada(inicioSemana);
       });
     return () => {
       valido = false;
     };
-  }, [segunda, semVariaveis]);
+  }, [inicioSemana, semVariaveis]);
 
-  const dias = segunda ? diasDaSemana(segunda) : [];
+  const dias = inicioSemana ? diasDaSemana(inicioSemana) : [];
   const nomePorId = new Map(funcionarios.map((f) => [f.id, f]));
 
   function escaladosNa(data: string, turnoId: string): Funcionario[] {
@@ -203,9 +203,9 @@ export default function EscalaDaSemana() {
     } catch (e) {
       const mensagem = mensagemDeErro(e);
       // Em caso de erro, recarrega para mostrar o que está de fato salvo.
-      if (segunda) {
+      if (inicioSemana) {
         try {
-          setEscalas(await buscarEscalas(segunda));
+          setEscalas(await buscarEscalas(inicioSemana));
         } catch {
           // mantém a mensagem do erro original
         }
@@ -217,13 +217,13 @@ export default function EscalaDaSemana() {
   }
 
   async function sugerir() {
-    if (!segunda) return;
+    if (!inicioSemana) return;
     setSugerindo(true);
     setErroSugestao(null);
     try {
-      const dados = await pedirSugestao(segunda);
+      const dados = await pedirSugestao(inicioSemana);
       setErroProposta(null);
-      setProposta({ segunda, dados });
+      setProposta({ inicioSemana, dados });
     } catch (e) {
       setErroSugestao(mensagemDeErro(e));
     } finally {
@@ -234,7 +234,7 @@ export default function EscalaDaSemana() {
   // Grava só a diferença: primeiro quem entra, depois tira quem sai.
   async function aprovarProposta() {
     if (!proposta) return;
-    const semanaDaProposta = proposta.segunda;
+    const semanaDaProposta = proposta.inicioSemana;
     setSalvandoProposta(true);
     setErroProposta(null);
     try {
@@ -276,12 +276,12 @@ export default function EscalaDaSemana() {
   if (semVariaveis) return <AvisoSemVariaveis />;
 
   const resultado: ResultadoAlertas | null =
-    segunda && !carregando
-      ? calcularAlertas({ regras: REGRAS, segunda, turnos, funcionarios, escalas })
+    inicioSemana && !carregando
+      ? calcularAlertas({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas })
       : null;
 
-  const tituloSemana = segunda
-    ? `${diaMes(segunda)} a ${diaMes(somarDias(segunda, 6))}`
+  const tituloSemana = inicioSemana
+    ? `${diaMes(inicioSemana)} a ${diaMes(somarDias(inicioSemana, 6))}`
     : "";
   const ehSemanaAtual = deslocamento === 0;
 
@@ -297,7 +297,7 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1"
           onClick={() => setDeslocamento((d) => d - 1)}
-          disabled={!segunda || sugerindo}
+          disabled={!inicioSemana || sugerindo}
           aria-label="Semana anterior"
         >
           ◀ Anterior
@@ -306,7 +306,7 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1"
           onClick={() => setDeslocamento(0)}
-          disabled={!segunda || ehSemanaAtual || sugerindo}
+          disabled={!inicioSemana || ehSemanaAtual || sugerindo}
         >
           Hoje
         </button>
@@ -314,7 +314,7 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1"
           onClick={() => setDeslocamento((d) => d + 1)}
-          disabled={!segunda || sugerindo}
+          disabled={!inicioSemana || sugerindo}
           aria-label="Próxima semana"
         >
           Próxima ▶
@@ -327,7 +327,7 @@ export default function EscalaDaSemana() {
             type="button"
             className="botao w-full"
             onClick={sugerir}
-            disabled={!segunda || carregando || sugerindo}
+            disabled={!inicioSemana || carregando || sugerindo}
           >
             {sugerindo ? "Montando a sugestão..." : "✨ Sugerir escala"}
           </button>
@@ -476,10 +476,10 @@ export default function EscalaDaSemana() {
         />
       )}
 
-      {proposta && proposta.segunda === segunda && (
+      {proposta && proposta.inicioSemana === inicioSemana && (
         <PropostaEscala
           proposta={proposta.dados}
-          segunda={proposta.segunda}
+          inicioSemana={proposta.inicioSemana}
           turnos={turnos}
           funcionarios={funcionarios}
           escalasAtuais={escalas}

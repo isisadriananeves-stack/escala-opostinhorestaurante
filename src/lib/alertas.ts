@@ -73,13 +73,14 @@ const NOMES_MES = [
 
 /**
  * Período de datas que precisa ser carregado do banco para conferir a semana:
- * a semana, o domingo anterior, a segunda seguinte e todos os domingos do mês.
+ * a semana (domingo a sábado), o sábado anterior, o domingo seguinte e todos os
+ * domingos do mês do domingo desta semana.
  */
-export function periodoParaConferir(segunda: string): { inicio: string; fim: string } {
-  const domingo = somarDias(segunda, 6);
-  const domingos = domingosDoMes(domingo);
-  const candidatosInicio = [somarDias(segunda, -1), domingos[0]];
-  const candidatosFim = [somarDias(domingo, 1), domingos[domingos.length - 1]];
+export function periodoParaConferir(inicioSemana: string): { inicio: string; fim: string } {
+  const sabado = somarDias(inicioSemana, 6);
+  const domingos = domingosDoMes(inicioSemana);
+  const candidatosInicio = [somarDias(inicioSemana, -7), domingos[0]];
+  const candidatosFim = [somarDias(sabado, 1), domingos[domingos.length - 1]];
   return {
     inicio: candidatosInicio.sort()[0],
     fim: candidatosFim.sort()[candidatosFim.length - 1],
@@ -113,15 +114,16 @@ export function conferirMinimo(
 
 export function calcularAlertas(params: {
   regras: RegrasDaCasa;
-  segunda: string;
+  inicioSemana: string;
   turnos: Turno[];
   funcionarios: Funcionario[];
-  // Escalas do período de periodoParaConferir(segunda).
+  // Escalas do período de periodoParaConferir(inicioSemana).
   escalas: Escala[];
 }): ResultadoAlertas {
-  const { regras, segunda, turnos, funcionarios, escalas } = params;
-  const dias = diasDaSemana(segunda);
-  const domingo = dias[6];
+  const { regras, inicioSemana, turnos, funcionarios, escalas } = params;
+  const dias = diasDaSemana(inicioSemana);
+  // A semana começa no domingo: ele é o primeiro dia.
+  const domingo = dias[0];
   const porId = new Map(funcionarios.map((f) => [f.id, f]));
   const alertas: Alerta[] = [];
 
@@ -164,9 +166,9 @@ export function calcularAlertas(params: {
   const turnoFecha = turnos.find((t) => normalizar(t.nome) === normalizar(fecharEAbrir.turnoQueFecha));
   const turnoAbre = turnos.find((t) => normalizar(t.nome) === normalizar(fecharEAbrir.turnoQueAbre));
   if (fecharEAbrir.proibido && turnoFecha && turnoAbre) {
-    // Do domingo anterior até o domingo da semana (o dia seguinte pode ser a segunda seguinte).
+    // Do sábado anterior até o último sábado da semana (o dia seguinte pode ser o domingo seguinte).
     for (let i = -1; i <= 6; i++) {
-      const diaFecha = somarDias(segunda, i);
+      const diaFecha = somarDias(inicioSemana, i);
       const diaAbre = somarDias(diaFecha, 1);
       const fecham = pessoasNoQuadro.get(chaveCelula(diaFecha, turnoFecha.id)) ?? new Set<string>();
       const abrem = pessoasNoQuadro.get(chaveCelula(diaAbre, turnoAbre.id)) ?? new Set<string>();

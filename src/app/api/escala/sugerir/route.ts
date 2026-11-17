@@ -1,6 +1,6 @@
-// POST /api/escala/sugerir   corpo: { "segunda": "AAAA-MM-DD" }
+// POST /api/escala/sugerir   corpo: { "inicioSemana": "AAAA-MM-DD" }
 // Pede à IA (no servidor, com a ANTHROPIC_API_KEY) uma proposta de escala para a
-// semana que começa nessa segunda, seguindo as regras de src/config/regras.ts.
+// semana que começa nesse domingo, seguindo as regras de src/config/regras.ts.
 // Não salva nada: devolve a proposta para o dono aprovar na tela.
 // Só responde para quem está conectado e liberado (veja src/lib/login-servidor.ts).
 
@@ -27,16 +27,16 @@ export async function POST(request: Request) {
     return Response.json({ erro: login.erro }, { status: login.status });
   }
 
-  let segunda = "";
+  let inicioSemana = "";
   try {
-    const corpo = (await request.json()) as { segunda?: unknown };
-    if (typeof corpo.segunda === "string") segunda = corpo.segunda;
+    const corpo = (await request.json()) as { inicioSemana?: unknown };
+    if (typeof corpo.inicioSemana === "string") inicioSemana = corpo.inicioSemana;
   } catch {
     // corpo inválido: cai na validação abaixo
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(segunda) || paraData(segunda).getDay() !== 1) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inicioSemana) || paraData(inicioSemana).getDay() !== 0) {
     return Response.json(
-      { erro: "Semana inválida. Envie a segunda-feira no formato AAAA-MM-DD." },
+      { erro: "Semana inválida. Envie o domingo no formato AAAA-MM-DD." },
       { status: 400 },
     );
   }
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   let funcionarios: FuncionarioEscala[];
   let escalas: Escala[];
   try {
-    const { inicio, fim } = periodoParaConferir(segunda);
+    const { inicio, fim } = periodoParaConferir(inicioSemana);
     const [t, f, e] = await Promise.all([
       login.db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
       login.db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).eq("ativo", true).order("funcao").order("nome"),
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const sugestao = await sugerirEscala({ regras: REGRAS, segunda, turnos, funcionarios, escalas });
+    const sugestao = await sugerirEscala({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas });
     return Response.json(sugestao satisfies RespostaSugestao);
   } catch (e) {
     const erro = e instanceof ErroIA ? e.message : "A sugestão da IA falhou. Tente de novo.";

@@ -21,9 +21,9 @@ const chaveLugar = (e: EscalaSugerida) => `${e.data}|${e.turno_id}|${e.funcionar
 export function diferencaDaProposta(
   proposta: EscalaSugerida[],
   escalasAtuais: Escala[],
-  segunda: string,
+  inicioSemana: string,
 ): { entram: EscalaSugerida[]; saem: Escala[] } {
-  const dias = new Set(diasDaSemana(segunda));
+  const dias = new Set(diasDaSemana(inicioSemana));
   const atuais = escalasAtuais.filter((e) => dias.has(e.data));
   const chavesAtuais = new Set(atuais.map(chaveLugar));
   const chavesProposta = new Set(proposta.map(chaveLugar));
@@ -40,7 +40,7 @@ function primeiroNome(nome: string): string {
 
 export function PropostaEscala({
   proposta,
-  segunda,
+  inicioSemana,
   turnos,
   funcionarios,
   escalasAtuais,
@@ -50,7 +50,7 @@ export function PropostaEscala({
   onDescartar,
 }: {
   proposta: RespostaSugestao;
-  segunda: string;
+  inicioSemana: string;
   turnos: Turno[];
   funcionarios: Funcionario[];
   // Escala salva no período carregado pela tela (semana e dias ao redor).
@@ -60,9 +60,9 @@ export function PropostaEscala({
   onAprovar: () => void;
   onDescartar: () => void;
 }) {
-  const dias = diasDaSemana(segunda);
+  const dias = diasDaSemana(inicioSemana);
   const porId = new Map(funcionarios.map((f) => [f.id, f]));
-  const { entram, saem } = diferencaDaProposta(proposta.escalas, escalasAtuais, segunda);
+  const { entram, saem } = diferencaDaProposta(proposta.escalas, escalasAtuais, inicioSemana);
   const semMudanca = entram.length === 0 && saem.length === 0;
 
   // Confere a proposta com as mesmas regras da tela: fora da semana fica o que já está salvo.
@@ -73,7 +73,7 @@ export function PropostaEscala({
   ];
   const { alertas } = calcularAlertas({
     regras: REGRAS,
-    segunda,
+    inicioSemana,
     turnos,
     funcionarios,
     escalas: simuladas,
@@ -117,7 +117,7 @@ export function PropostaEscala({
       >
         <div className="border-b border-neutral-200 p-4">
           <p className="titulo text-xl" style={{ color: "var(--cor-principal)" }}>
-            Escala sugerida · {diaMes(segunda)} a {diaMes(somarDias(segunda, 6))}
+            Escala sugerida · {diaMes(inicioSemana)} a {diaMes(somarDias(inicioSemana, 6))}
           </p>
           <p className="text-sm font-semibold text-amber-800">
             Ainda não foi salva. Confira e toque em Aprovar.

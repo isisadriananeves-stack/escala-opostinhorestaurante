@@ -1,5 +1,5 @@
 // Funções de data em português, sem bibliotecas externas.
-// Semana começa na segunda-feira e termina no domingo.
+// Semana começa no domingo e termina no sábado.
 
 export const DIAS_SEMANA_CURTO = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 export const DIAS_SEMANA = [
@@ -36,18 +36,16 @@ export function somarDias(iso: string, dias: number): string {
   return paraISO(d);
 }
 
-/** Segunda-feira da semana que contém a data. */
+/** Domingo da semana que contém a data. */
 export function inicioDaSemana(iso: string): string {
   const d = paraData(iso);
-  const diaSemana = d.getDay(); // 0 = domingo
-  const atras = diaSemana === 0 ? 6 : diaSemana - 1;
-  d.setDate(d.getDate() - atras);
+  d.setDate(d.getDate() - d.getDay()); // getDay(): 0 = domingo
   return paraISO(d);
 }
 
-/** Os 7 dias (ISO) da semana que começa em segundaISO. */
-export function diasDaSemana(segundaISO: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => somarDias(segundaISO, i));
+/** Os 7 dias (ISO) da semana que começa em inicioSemana (um domingo), até o sábado. */
+export function diasDaSemana(inicioSemana: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => somarDias(inicioSemana, i));
 }
 
 /** "20/11" */

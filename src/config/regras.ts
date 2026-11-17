@@ -27,7 +27,7 @@ export type RegraDeMinimo = {
 
 export type RegrasDaCasa = {
   minimos: RegraDeMinimo[];
-  // Dias sem nenhum turno na semana (segunda a domingo).
+  // Dias sem nenhum turno na semana (domingo a sábado).
   folgasPorSemana: number;
   domingos: {
     // Mulheres: não podem trabalhar dois domingos seguidos.
