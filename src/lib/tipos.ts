@@ -128,3 +128,15 @@ export type ResumoAdmissoes = {
   semCpf: number; // ativos sem CPF cadastrado aqui
   naoEncontrados: number; // com CPF, mas sem cadastro ativo no Pontomais
 };
+
+// Folga fixa de domingo de uma pessoa (tabela folgas_domingo).
+//   "domingos_do_mes": folga nos domingos do mês indicados (1 a 5), todo mês.
+//   "quinzenal": domingo sim, domingo não, a partir do domingo "inicio" (AAAA-MM-DD).
+export type FolgaDomingo = {
+  id: string;
+  funcionario_id: string;
+  tipo: "domingos_do_mes" | "quinzenal";
+  domingos_do_mes: number[] | null;
+  inicio: string | null;
+};
+export const CAMPOS_FOLGA_DOMINGO = "id, funcionario_id, tipo, domingos_do_mes, inicio";

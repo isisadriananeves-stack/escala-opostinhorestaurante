@@ -2,10 +2,11 @@
 // e devolve os alertas da semana. Não acessa o banco: recebe os dados prontos.
 
 import type { RegrasDaCasa, RegraDeMinimo } from "@/config/regras";
-import type { Escala, FuncionarioEscala as Funcionario, Turno } from "@/lib/tipos";
+import type { Escala, FolgaDomingo, FuncionarioEscala as Funcionario, Turno } from "@/lib/tipos";
+import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { diaMes, diasDaSemana, paraData, rotuloDia, somarDias } from "@/lib/datas";
 
-export type TipoAlerta = "minimo" | "fechar-abrir" | "folga" | "domingo";
+export type TipoAlerta = "minimo" | "fechar-abrir" | "folga" | "domingo" | "folga-fixa";
 
 export type Alerta = {
   tipo: TipoAlerta;
@@ -25,6 +26,7 @@ export const ROTULO_TIPO: Record<TipoAlerta, string> = {
   "fechar-abrir": "Fecha e abre",
   folga: "Folga",
   domingo: "Domingo",
+  "folga-fixa": "Folga fixa",
 };
 
 export type ResultadoAlertas = {
@@ -129,8 +131,10 @@ export function calcularAlertas(params: {
   funcionarios: Funcionario[];
   // Escalas do período de periodoParaConferir(inicioSemana).
   escalas: Escala[];
+  // Folgas fixas de domingo (tabela folgas_domingo).
+  folgasFixas?: FolgaDomingo[];
 }): ResultadoAlertas {
-  const { regras, inicioSemana, turnos, funcionarios, escalas } = params;
+  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas = [] } = params;
   const dias = diasDaSemana(inicioSemana);
   // A semana começa no domingo: ele é o primeiro dia.
   const domingo = dias[0];
@@ -257,6 +261,23 @@ export function calcularAlertas(params: {
         });
       }
     }
+  }
+
+  // 5. Escalado no domingo de folga fixa (o banco já recusa; isto pega o que foi salvo antes).
+  const mapaFolgas = folgasPorPessoa(folgasFixas);
+  const turnoPorId = new Map(turnos.map((t) => [t.id, t]));
+  for (const e of escalas) {
+    if (!dias.includes(e.data) || !temFolgaFixa(mapaFolgas, e.funcionario_id, e.data)) continue;
+    const f = porId.get(e.funcionario_id);
+    const turno = turnoPorId.get(e.turno_id);
+    if (!f || !turno) continue;
+    alertas.push({
+      tipo: "folga-fixa",
+      texto: `${f.nome} está no ${turno.nome} ${rotuloDia(e.data)}, que é folga fixa dele(a)`,
+      curto: `${primeiroNome(f.nome)}: folga fixa`,
+      celulas: [{ data: e.data, turnoId: turno.id }],
+      funcionarioId: f.id,
+    });
   }
 
   const porCelula = new Map<string, Alerta[]>();

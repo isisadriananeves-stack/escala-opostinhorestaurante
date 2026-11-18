@@ -10,7 +10,8 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RegrasDaCasa } from "@/config/regras";
-import type { Escala, EscalaSugerida, FuncionarioEscala, Turno } from "@/lib/tipos";
+import type { Escala, EscalaSugerida, FolgaDomingo, FuncionarioEscala, Turno } from "@/lib/tipos";
+import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { DIAS_SEMANA, diaMes, diasDaSemana, horaCurta, paraData } from "@/lib/datas";
 
 /** Erro com mensagem em português, segura para mostrar na tela (sem segredos). */
@@ -26,6 +27,8 @@ export type PedidoSugestao = {
   funcionarios: FuncionarioEscala[];
   // Escala já salva: a semana e os dias ao redor (periodoParaConferir).
   escalas: Escala[];
+  // Folgas fixas de domingo: nesses dias a pessoa não pode ser escalada.
+  folgasFixas: FolgaDomingo[];
 };
 
 export type SugestaoIA = {
@@ -126,9 +129,10 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     throw new ErroIA("A variável ANTHROPIC_API_KEY não está configurada na Vercel.");
   }
 
-  const { regras, inicioSemana, turnos, funcionarios, escalas } = pedido;
+  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas } = pedido;
   const dias = diasDaSemana(inicioSemana);
   const diasSet = new Set(dias);
+  const mapaFolgas = folgasPorPessoa(folgasFixas);
 
   // Códigos curtos no lugar dos ids do banco.
   const codigoPessoa = new Map<string, string>();
@@ -186,6 +190,16 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     "",
     "REGRAS DA CASA:",
     descreverRegras(regras),
+    "",
+    "FOLGA FIXA NO DOMINGO (proibido escalar a pessoa nesse dia, em qualquer turno):",
+    (() => {
+      const linhas = dias.flatMap((dia) =>
+        funcionarios
+          .filter((f) => temFolgaFixa(mapaFolgas, f.id, dia))
+          .map((f) => `- ${codigoPessoa.get(f.id)}: ${nomeDoDia(dia)}`),
+      );
+      return linhas.length > 0 ? linhas.join("\n") : "(ninguém nesta semana)";
+    })(),
     "",
     "ESCALA JÁ SALVA NESTA SEMANA:",
     quadrosDe(daSemana),
@@ -268,6 +282,8 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     for (const codigo of q.pessoas) {
       const funcionarioId = idPorCodigoPessoa.get(codigo);
       if (!funcionarioId) continue;
+      // Folga fixa no domingo: tira, mesmo que a IA tenha escalado.
+      if (temFolgaFixa(mapaFolgas, funcionarioId, q.data)) continue;
       const chave = `${q.data}|${turnoId}|${funcionarioId}`;
       if (vistos.has(chave)) continue;
       vistos.add(chave);

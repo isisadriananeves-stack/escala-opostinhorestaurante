@@ -10,8 +10,10 @@ import { paraData } from "@/lib/datas";
 import { ErroIA, sugerirEscala } from "@/lib/integracoes/anthropic";
 import { conferirLogin } from "@/lib/login-servidor";
 import {
+  CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   type Escala,
+  type FolgaDomingo,
   type FuncionarioEscala,
   type RespostaSugestao,
   type Turno,
@@ -44,9 +46,10 @@ export async function POST(request: Request) {
   let turnos: Turno[];
   let funcionarios: FuncionarioEscala[];
   let escalas: Escala[];
+  let folgasFixas: FolgaDomingo[];
   try {
     const { inicio, fim } = periodoParaConferir(inicioSemana);
-    const [t, f, e] = await Promise.all([
+    const [t, f, e, fx] = await Promise.all([
       login.db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
       login.db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).eq("ativo", true).order("funcao").order("nome"),
       login.db
@@ -54,16 +57,19 @@ export async function POST(request: Request) {
         .select("id, data, turno_id, funcionario_id")
         .gte("data", inicio)
         .lte("data", fim),
+      login.db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
     ]);
     if (t.error) throw t.error;
     if (f.error) throw f.error;
     if (e.error) throw e.error;
+    if (fx.error) throw fx.error;
+    folgasFixas = fx.data ?? [];
     turnos = t.data ?? [];
     funcionarios = f.data ?? [];
     escalas = e.data ?? [];
   } catch {
     return Response.json(
-      { erro: "Não foi possível ler turnos, equipe e escala no banco." },
+      { erro: "Não foi possível ler turnos, equipe, folgas fixas e escala no banco." },
       { status: 500 },
     );
   }
@@ -76,7 +82,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const sugestao = await sugerirEscala({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas });
+    const sugestao = await sugerirEscala({
+      regras: REGRAS,
+      inicioSemana,
+      turnos,
+      funcionarios,
+      escalas,
+      folgasFixas,
+    });
     return Response.json(sugestao satisfies RespostaSugestao);
   } catch (e) {
     const erro = e instanceof ErroIA ? e.message : "A sugestão da IA falhou. Tente de novo.";

@@ -155,6 +155,63 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Folgas fixas de domingo (uma regra por pessoa)
+--   tipo 'domingos_do_mes': folga nos domingos do mês indicados (1º a 5º), todo mês.
+--   tipo 'quinzenal': folga domingo sim, domingo não, a partir do domingo "inicio".
+-- O site confere a mesma conta em src/lib/folgas-domingo.ts.
+-- ---------------------------------------------------------------------
+create table if not exists folgas_domingo (
+  id uuid primary key default gen_random_uuid(),
+  funcionario_id uuid not null unique references funcionarios (id) on delete cascade,
+  tipo text not null check (tipo in ('domingos_do_mes', 'quinzenal')),
+  domingos_do_mes int[],
+  inicio date,
+  criado_em timestamptz not null default now(),
+  constraint folgas_domingo_regra_valida check (
+    (tipo = 'domingos_do_mes' and inicio is null and domingos_do_mes is not null
+      and cardinality(domingos_do_mes) between 1 and 5 and domingos_do_mes <@ array[1, 2, 3, 4, 5])
+    or
+    (tipo = 'quinzenal' and domingos_do_mes is null and inicio is not null
+      and extract(dow from inicio) = 0)
+  )
+);
+alter table folgas_domingo enable row level security;
+drop policy if exists "equipe autorizada" on folgas_domingo;
+create policy "equipe autorizada" on folgas_domingo for all to authenticated
+  using (usuario_autorizado()) with check (usuario_autorizado());
+
+-- A pessoa tem folga fixa nesse dia?
+create or replace function tem_folga_fixa(funcionario uuid, dia date) returns boolean
+language sql stable security definer set search_path = public as $$
+  select extract(dow from dia) = 0 and exists (
+    select 1 from folgas_domingo f
+    where f.funcionario_id = funcionario
+      and (
+        (f.tipo = 'domingos_do_mes'
+          and ((extract(day from dia)::int - 1) / 7 + 1) = any (f.domingos_do_mes))
+        or
+        (f.tipo = 'quinzenal' and dia >= f.inicio and (dia - f.inicio) % 14 = 0)
+      )
+  );
+$$;
+revoke all on function tem_folga_fixa(uuid, date) from public, anon;
+grant execute on function tem_folga_fixa(uuid, date) to authenticated;
+
+-- O banco recusa escalar alguém no domingo de folga fixa.
+create or replace function escalas_confere_folga_fixa() returns trigger
+language plpgsql as $$
+begin
+  if tem_folga_fixa(new.funcionario_id, new.data) then
+    raise exception 'Folga fixa no domingo: esta pessoa não pode ser escalada neste dia.'
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+drop trigger if exists confere_folga_fixa on escalas;
+create trigger confere_folga_fixa before insert or update of data, funcionario_id on escalas
+  for each row execute function escalas_confere_folga_fixa();
+
+-- ---------------------------------------------------------------------
 -- Dados de exemplo (restaurante fictício Vila Tempero)
 -- Os CPFs são fictícios e batem com a API de ponto de demonstração.
 -- ---------------------------------------------------------------------

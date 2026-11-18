@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
+  CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   type Escala,
+  type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
   type RespostaSugestao,
   type Turno,
@@ -31,6 +33,7 @@ import {
   type Alerta,
   type ResultadoAlertas,
 } from "@/lib/alertas";
+import { descreverFolgaFixa, folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 
 // Célula aberta para escolher quem trabalha.
 type CelulaAberta = { data: string; turno: Turno };
@@ -98,6 +101,7 @@ export default function EscalaDaSemana() {
 
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [folgasFixas, setFolgasFixas] = useState<FolgaDomingo[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [escalas, setEscalas] = useState<Escala[]>([]);
   const [semanaCarregada, setSemanaCarregada] = useState<string | null>(null);
@@ -127,18 +131,21 @@ export default function EscalaDaSemana() {
     async function carregarCadastros() {
       try {
         const db = supabase();
-        const [t, f] = await Promise.all([
+        const [t, f, fx] = await Promise.all([
           db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
           db
             .from("funcionarios")
             .select(CAMPOS_FUNCIONARIO_ESCALA)
             .order("funcao")
             .order("nome"),
+          db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
         ]);
         if (t.error) throw t.error;
         if (f.error) throw f.error;
+        if (fx.error) throw fx.error;
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
+        setFolgasFixas(fx.data ?? []);
       } catch (e) {
         setErro(mensagemDeErro(e));
       } finally {
@@ -277,7 +284,7 @@ export default function EscalaDaSemana() {
 
   const resultado: ResultadoAlertas | null =
     inicioSemana && !carregando
-      ? calcularAlertas({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas })
+      ? calcularAlertas({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas, folgasFixas })
       : null;
 
   const tituloSemana = inicioSemana
@@ -468,6 +475,7 @@ export default function EscalaDaSemana() {
           celula={celula}
           funcionarios={funcionarios}
           escalados={escaladosNa(celula.data, celula.turno.id)}
+          folgasFixas={folgasFixas}
           alertas={resultado?.porCelula.get(chaveCelula(celula.data, celula.turno.id)) ?? []}
           salvandoId={salvandoId}
           erro={erro}
@@ -483,6 +491,7 @@ export default function EscalaDaSemana() {
           turnos={turnos}
           funcionarios={funcionarios}
           escalasAtuais={escalas}
+          folgasFixas={folgasFixas}
           salvando={salvandoProposta}
           erro={erroProposta}
           onAprovar={aprovarProposta}
@@ -546,6 +555,7 @@ function EscolherEquipe({
   celula,
   funcionarios,
   escalados,
+  folgasFixas,
   alertas,
   salvandoId,
   erro,
@@ -555,6 +565,7 @@ function EscolherEquipe({
   celula: CelulaAberta;
   funcionarios: Funcionario[];
   escalados: Funcionario[];
+  folgasFixas: FolgaDomingo[];
   alertas: Alerta[];
   salvandoId: string | null;
   erro: string | null;
@@ -567,6 +578,7 @@ function EscolherEquipe({
   const lista = funcionarios.filter((f) => f.ativo || idsEscalados.has(f.id));
   const regra = regraDoQuadro(REGRAS, celula.turno, celula.data);
   const contagem = regra ? conferirMinimo(regra, escalados) : [];
+  const mapaFolgas = folgasPorPessoa(folgasFixas);
 
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
@@ -642,19 +654,23 @@ function EscolherEquipe({
           {lista.map((f) => {
             const marcado = idsEscalados.has(f.id);
             const salvando = salvandoId === f.id;
+            // Folga fixa no domingo: não dá para escalar (só tirar, se já estiver).
+            const folgaFixa = temFolgaFixa(mapaFolgas, f.id, celula.data);
+            const travado = folgaFixa && !marcado;
+            const regraFolga = mapaFolgas.get(f.id);
             return (
               <li key={f.id}>
                 <label
-                  className={`flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl px-3 py-2 active:bg-neutral-100 ${
-                    marcado ? "bg-neutral-50" : ""
-                  }`}
+                  className={`flex min-h-[56px] items-center gap-3 rounded-xl px-3 py-2 ${
+                    travado ? "cursor-not-allowed opacity-60" : "cursor-pointer active:bg-neutral-100"
+                  } ${marcado ? (folgaFixa ? "bg-red-50" : "bg-neutral-50") : ""}`}
                 >
                   <input
                     type="checkbox"
                     className="h-6 w-6 shrink-0"
                     style={{ accentColor: "var(--cor-principal)" }}
                     checked={marcado}
-                    disabled={salvandoId !== null}
+                    disabled={salvandoId !== null || travado}
                     onChange={() => onAlternar(f)}
                   />
                   <span className="flex-1">
@@ -665,6 +681,18 @@ function EscolherEquipe({
                       )}
                     </span>
                     <span className="block text-sm text-neutral-600">{f.funcao}</span>
+                    {folgaFixa && regraFolga && (
+                      <span
+                        className={`block text-sm font-semibold ${marcado ? "text-red-700" : "text-green-800"}`}
+                      >
+                        {marcado
+                          ? "⚠ Folga fixa neste domingo: toque para tirar"
+                          : "Folga fixa neste domingo"}
+                        <span className="block text-xs font-normal text-neutral-600">
+                          {descreverFolgaFixa(regraFolga)}
+                        </span>
+                      </span>
+                    )}
                   </span>
                   {salvando && <span className="text-sm text-neutral-500">Salvando...</span>}
                 </label>

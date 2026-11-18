@@ -6,8 +6,10 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
+  CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   type Escala,
+  type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
   type Turno,
 } from "@/lib/tipos";
@@ -23,6 +25,7 @@ import {
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
 import { REGRAS } from "@/config/regras";
 import { calcularAlertas, diasDeFolga, periodoParaConferir, type Alerta } from "@/lib/alertas";
+import { descreverFolgaFixa, folgasPorPessoa, regraDaFolga } from "@/lib/folgas-domingo";
 
 const CAMPOS_ESCALA = "id, data, turno_id, funcionario_id";
 
@@ -63,6 +66,9 @@ type Linha = {
   folgas: string[];
   falta: number;
   folgaNoDomingo: boolean;
+  // Regra de folga fixa de domingo da pessoa (se tiver) e se ela vale neste domingo.
+  regraFixa: FolgaDomingo | null;
+  folgaFixaHoje: boolean;
   avisosDomingo: string[];
 };
 
@@ -74,6 +80,7 @@ export default function Folgas() {
 
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [folgasFixas, setFolgasFixas] = useState<FolgaDomingo[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [escalas, setEscalas] = useState<Escala[]>([]);
   const [semanaCarregada, setSemanaCarregada] = useState<string | null>(null);
@@ -88,12 +95,15 @@ export default function Folgas() {
     Promise.all([
       db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
       db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).order("nome"),
+      db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
     ])
-      .then(([t, f]) => {
+      .then(([t, f, fx]) => {
         if (t.error) throw t.error;
         if (f.error) throw f.error;
+        if (fx.error) throw fx.error;
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
+        setFolgasFixas(fx.data ?? []);
       })
       .catch((e) => setErro(mensagemDeErro(e)))
       .finally(() => setCadastrosCarregados(true));
@@ -130,10 +140,17 @@ export default function Folgas() {
   const avisosDomingoPorPessoa = new Map<string, Alerta[]>();
   let semSexo: Funcionario[] = [];
   if (inicioSemana && !carregando) {
-    const resultado = calcularAlertas({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas });
+    const resultado = calcularAlertas({
+      regras: REGRAS,
+      inicioSemana,
+      turnos,
+      funcionarios,
+      escalas,
+      folgasFixas,
+    });
     semSexo = resultado.semSexo;
     for (const a of resultado.alertas) {
-      if (a.tipo !== "domingo" || !a.funcionarioId) continue;
+      if ((a.tipo !== "domingo" && a.tipo !== "folga-fixa") || !a.funcionarioId) continue;
       avisosDomingoPorPessoa.set(a.funcionarioId, [
         ...(avisosDomingoPorPessoa.get(a.funcionarioId) ?? []),
         a,
@@ -141,6 +158,7 @@ export default function Folgas() {
     }
   }
   const idsSemSexo = new Set(semSexo.map((f) => f.id));
+  const mapaFolgas = folgasPorPessoa(folgasFixas);
 
   const turnoPorId = new Map(turnos.map((t) => [t.id, t]));
   const linhas: Linha[] = funcionarios
@@ -155,12 +173,15 @@ export default function Folgas() {
           .sort((a, b) => a.ordem - b.ordem),
       );
       const folgas = diasDeFolga(dias, new Set(minhas.map((e) => e.data)));
+      const regraFixa = mapaFolgas.get(f.id) ?? null;
       return {
         funcionario: f,
         turnosPorDia,
         folgas,
         falta: Math.max(0, minimo - folgas.length),
         folgaNoDomingo: folgas.includes(domingo),
+        regraFixa,
+        folgaFixaHoje: Boolean(regraFixa && domingo && regraDaFolga(regraFixa, domingo)),
         avisosDomingo: (avisosDomingoPorPessoa.get(f.id) ?? []).map((a) =>
           a.texto.replace(f.nome, "").trim(),
         ),
@@ -258,7 +279,8 @@ export default function Folgas() {
 }
 
 function CartaoFolgas({ linha, dias, semSexo }: { linha: Linha; dias: string[]; semSexo: boolean }) {
-  const { funcionario, turnosPorDia, folgas, falta, folgaNoDomingo, avisosDomingo } = linha;
+  const { funcionario, turnosPorDia, folgas, falta, folgaNoDomingo, regraFixa, folgaFixaHoje, avisosDomingo } =
+    linha;
   const qtd = folgas.length;
   return (
     <li className={`cartao space-y-3 ${falta > 0 ? "border-red-300 bg-red-50! shadow-none!" : ""}`}>
@@ -284,12 +306,13 @@ function CartaoFolgas({ linha, dias, semSexo }: { linha: Linha; dias: string[]; 
           const turnosDoDia = turnosPorDia[i] ?? [];
           const folga = turnosDoDia.length === 0;
           const ehDomingo = i === 0;
+          const fixa = ehDomingo && folga && folgaFixaHoje;
           const nomeDia = DIAS_SEMANA_CURTO[paraData(dia).getDay()];
           return (
             <li
               key={dia}
               aria-label={`${nomeDia} ${diaMes(dia)}: ${
-                folga ? "folga" : turnosDoDia.map((t) => t.nome).join(" e ")
+                fixa ? "folga fixa" : folga ? "folga" : turnosDoDia.map((t) => t.nome).join(" e ")
               }`}
               className={`flex min-h-[64px] min-w-0 flex-col items-center rounded-md border px-0 py-1 text-center ${
                 folga
@@ -300,7 +323,9 @@ function CartaoFolgas({ linha, dias, semSexo }: { linha: Linha; dias: string[]; 
               <span className="text-xs font-semibold">{nomeDia}</span>
               <span className="text-[11px] text-neutral-500">{diaMes(dia).slice(0, 2)}</span>
               <span className="mt-auto text-[10px] font-semibold leading-tight min-[360px]:text-xs">
-                {folga
+                {fixa
+                  ? "Fixa"
+                  : folga
                   ? "Folga"
                   : turnosDoDia.map((t) => (
                       <span key={t.id} className="block">
@@ -317,8 +342,15 @@ function CartaoFolgas({ linha, dias, semSexo }: { linha: Linha; dias: string[]; 
 
       <div className="space-y-1 text-sm">
         <p className={folgaNoDomingo ? "font-semibold text-green-800" : "text-neutral-700"}>
-          {folgaNoDomingo ? "✓ Folga no domingo" : "Trabalha no domingo"}
+          {folgaNoDomingo && folgaFixaHoje
+            ? "✓ Folga fixa no domingo"
+            : folgaNoDomingo
+            ? "✓ Folga no domingo"
+            : "Trabalha no domingo"}
         </p>
+        {regraFixa && (
+          <p className="text-neutral-600">Folga fixa: {descreverFolgaFixa(regraFixa)}</p>
+        )}
         {avisosDomingo.map((texto) => (
           <p key={texto} className="font-semibold text-red-800">
             ⚠ Domingo: {texto}

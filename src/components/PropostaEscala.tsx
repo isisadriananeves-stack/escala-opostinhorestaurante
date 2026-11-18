@@ -9,6 +9,7 @@ import { calcularAlertas, chaveCelula, ROTULO_TIPO } from "@/lib/alertas";
 import { diaMes, diasDaSemana, horaCurta, rotuloDia, somarDias } from "@/lib/datas";
 import type {
   Escala,
+  FolgaDomingo,
   EscalaSugerida,
   FuncionarioEscala as Funcionario,
   RespostaSugestao,
@@ -44,6 +45,7 @@ export function PropostaEscala({
   turnos,
   funcionarios,
   escalasAtuais,
+  folgasFixas,
   salvando,
   erro,
   onAprovar,
@@ -55,6 +57,7 @@ export function PropostaEscala({
   funcionarios: Funcionario[];
   // Escala salva no período carregado pela tela (semana e dias ao redor).
   escalasAtuais: Escala[];
+  folgasFixas: FolgaDomingo[];
   salvando: boolean;
   erro: string | null;
   onAprovar: () => void;
@@ -77,6 +80,7 @@ export function PropostaEscala({
     turnos,
     funcionarios,
     escalas: simuladas,
+    folgasFixas,
   });
 
   const chavesEntram = new Set(entram.map(chaveLugar));
