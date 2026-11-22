@@ -9,6 +9,7 @@ import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
+  CAMPOS_TURNO,
   type Escala,
   type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
@@ -40,6 +41,7 @@ import {
   temFolgaFixa,
 } from "@/lib/folgas-domingo";
 import { buscarEscalas, escalar, tirarDaEscala } from "@/lib/escalas";
+import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
 
 // Dia aberto para editar: de quem e qual dia.
 type DiaAberto = { funcionarioId: string; dia: string };
@@ -106,7 +108,7 @@ export default function Folgas() {
     if (semVariaveis) return;
     const db = supabase();
     Promise.all([
-      db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
+      db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
       db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).order("nome"),
       db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
     ])
@@ -574,6 +576,9 @@ function EditarDia({
           {turnos.map((turno) => {
             const existente = doDia.find((e) => e.turno_id === turno.id);
             const marcado = Boolean(existente);
+            const daPessoa = podeTrabalharNoTurno(pessoa.funcao, turno, turnos);
+            // Turno de outra função (ex.: Caixa): não aparece, a não ser que já esteja marcado.
+            if (!daPessoa && !marcado) return null;
             const travado = folgaFixa && !marcado;
             // Mínimo da função da pessoa neste turno.
             const regra = regraDoQuadro(REGRAS, turno, dia);
@@ -615,6 +620,11 @@ function EditarDia({
                     {horaCurta(turno.hora_inicio)}–{horaCurta(turno.hora_fim)}
                   </span>
                 </button>
+                {!daPessoa && (
+                  <p className="text-sm font-semibold text-red-700">
+                    ⚠ Não é deste turno ({motivoDoTurno(pessoa.funcao, turno)}): toque para tirar
+                  </p>
+                )}
                 {daFuncao && (
                   <p
                     className={`text-sm ${colegas >= daFuncao.minimo ? "text-green-800" : "text-red-700"}`}

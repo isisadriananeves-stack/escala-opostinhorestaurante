@@ -87,6 +87,9 @@ create table if not exists turnos (
   hora_fim time not null,
   ordem int not null default 0
 );
+-- Função que pode trabalhar no turno (ex.: 'Caixa'); null = qualquer função.
+-- Quem é de uma função com turno próprio só trabalha nesse turno (gatilho confere_funcao_do_turno).
+alter table turnos add column if not exists funcao text;
 
 -- Escala: quem trabalha em qual turno em qual dia
 create table if not exists escalas (
@@ -215,12 +218,45 @@ create trigger confere_folga_fixa before insert or update of data, funcionario_i
   for each row execute function escalas_confere_folga_fixa();
 
 -- ---------------------------------------------------------------------
+-- Turno da função: o banco recusa escalar alguém fora do turno da sua função
+--   turno com função -> só quem é dessa função;
+--   quem é de uma função que tem turno próprio -> só nesse turno.
+-- O site confere a mesma regra em src/lib/turnos.ts.
+-- ---------------------------------------------------------------------
+create or replace function escalas_confere_funcao_do_turno() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  funcao_turno text;
+  funcao_pessoa text;
+begin
+  select funcao into funcao_turno from turnos where id = new.turno_id;
+  select funcao into funcao_pessoa from funcionarios where id = new.funcionario_id;
+  if funcao_turno is not null and lower(btrim(funcao_turno)) <> lower(btrim(funcao_pessoa)) then
+    raise exception 'Este turno é só para a função %.', funcao_turno using errcode = 'P0001';
+  end if;
+  if funcao_turno is null and exists (
+    select 1 from turnos where lower(btrim(funcao)) = lower(btrim(funcao_pessoa))
+  ) then
+    raise exception 'Quem é da função % só trabalha no turno %.', funcao_pessoa, funcao_pessoa
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+drop trigger if exists confere_funcao_do_turno on escalas;
+create trigger confere_funcao_do_turno before insert or update of turno_id, funcionario_id on escalas
+  for each row execute function escalas_confere_funcao_do_turno();
+
+-- ---------------------------------------------------------------------
 -- Dados de exemplo (restaurante fictício Vila Tempero)
 -- Os CPFs são fictícios e batem com a API de ponto de demonstração.
 -- ---------------------------------------------------------------------
 insert into turnos (nome, hora_inicio, hora_fim, ordem) values
   ('Almoço', '11:00', '15:30', 1),
   ('Jantar', '18:00', '23:30', 2)
+on conflict (nome) do nothing;
+-- Turno próprio do caixa (só quem é da função Caixa).
+insert into turnos (nome, hora_inicio, hora_fim, ordem, funcao) values
+  ('Caixa', '11:36', '21:00', 3, 'Caixa')
 on conflict (nome) do nothing;
 
 -- Desliga a conferência de CPF só enquanto os exemplos (CPFs fictícios) entram.

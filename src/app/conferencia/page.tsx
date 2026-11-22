@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
   CAMPOS_FUNCIONARIO_CONFERENCIA,
+  CAMPOS_TURNO,
   type Escala,
   type FuncionarioConferencia as Funcionario,
   type RespostaMarcacoes,
@@ -93,7 +94,7 @@ export default function ConferenciaDoDia() {
       try {
         const db = supabase();
         const [t, f] = await Promise.all([
-          db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
+          db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
           db.from("funcionarios").select(CAMPOS_FUNCIONARIO_CONFERENCIA).order("nome"),
         ]);
         if (t.error) throw t.error;

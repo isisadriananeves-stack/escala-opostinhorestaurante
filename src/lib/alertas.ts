@@ -4,9 +4,16 @@
 import type { RegrasDaCasa, RegraDeMinimo } from "@/config/regras";
 import type { Escala, FolgaDomingo, FuncionarioEscala as Funcionario, Turno } from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
+import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
 import { diaMes, diasDaSemana, paraData, rotuloDia, somarDias } from "@/lib/datas";
 
-export type TipoAlerta = "minimo" | "fechar-abrir" | "folga" | "domingo" | "folga-fixa";
+export type TipoAlerta =
+  | "minimo"
+  | "fechar-abrir"
+  | "folga"
+  | "domingo"
+  | "folga-fixa"
+  | "turno-funcao";
 
 export type Alerta = {
   tipo: TipoAlerta;
@@ -27,6 +34,7 @@ export const ROTULO_TIPO: Record<TipoAlerta, string> = {
   folga: "Folga",
   domingo: "Domingo",
   "folga-fixa": "Folga fixa",
+  "turno-funcao": "Turno da função",
 };
 
 export type ResultadoAlertas = {
@@ -275,6 +283,21 @@ export function calcularAlertas(params: {
       tipo: "folga-fixa",
       texto: `${f.nome} está no ${turno.nome} ${rotuloDia(e.data)}, que é folga fixa dele(a)`,
       curto: `${primeiroNome(f.nome)}: folga fixa`,
+      celulas: [{ data: e.data, turnoId: turno.id }],
+      funcionarioId: f.id,
+    });
+  }
+
+  // 6. Escalado num turno que não é da sua função (o banco já recusa; isto pega o que foi salvo antes).
+  for (const e of escalas) {
+    if (!dias.includes(e.data)) continue;
+    const f = porId.get(e.funcionario_id);
+    const turno = turnoPorId.get(e.turno_id);
+    if (!f || !turno || podeTrabalharNoTurno(f.funcao, turno, turnos)) continue;
+    alertas.push({
+      tipo: "turno-funcao",
+      texto: `${f.nome} está no ${turno.nome} ${rotuloDia(e.data)}, mas ${motivoDoTurno(f.funcao, turno)}`,
+      curto: `${primeiroNome(f.nome)}: turno errado`,
       celulas: [{ data: e.data, turnoId: turno.id }],
       funcionarioId: f.id,
     });

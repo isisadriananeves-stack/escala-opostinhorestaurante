@@ -42,7 +42,11 @@ export type Turno = {
   hora_inicio: string; // "11:00:00"
   hora_fim: string; // "15:30:00"
   ordem: number;
+  // Função que pode trabalhar neste turno (ex.: "Caixa"); null = qualquer função.
+  // Quem é de uma função com turno próprio só trabalha nesse turno.
+  funcao?: string | null;
 };
+export const CAMPOS_TURNO = "id, nome, hora_inicio, hora_fim, ordem, funcao";
 
 export type Escala = {
   id: string;

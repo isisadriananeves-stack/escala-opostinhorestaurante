@@ -12,6 +12,7 @@ import { conferirLogin } from "@/lib/login-servidor";
 import {
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
+  CAMPOS_TURNO,
   type Escala,
   type FolgaDomingo,
   type FuncionarioEscala,
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
   try {
     const { inicio, fim } = periodoParaConferir(inicioSemana);
     const [t, f, e, fx] = await Promise.all([
-      login.db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
+      login.db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
       login.db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).eq("ativo", true).order("funcao").order("nome"),
       login.db
         .from("escalas")

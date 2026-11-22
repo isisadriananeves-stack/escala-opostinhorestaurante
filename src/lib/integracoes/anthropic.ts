@@ -12,6 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { RegrasDaCasa } from "@/config/regras";
 import type { Escala, EscalaSugerida, FolgaDomingo, FuncionarioEscala, Turno } from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
+import { podeTrabalharNoTurno } from "@/lib/turnos";
 import { DIAS_SEMANA, diaMes, diasDaSemana, horaCurta, paraData } from "@/lib/datas";
 
 /** Erro com mensagem em português, segura para mostrar na tela (sem segredos). */
@@ -181,7 +182,17 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     `SEMANA A MONTAR: ${dias.map(nomeDoDia).join("; ")}.`,
     "",
     "TURNOS (use o nome como código):",
-    ...turnos.map((t) => `- ${t.nome}: ${horaCurta(t.hora_inicio)} às ${horaCurta(t.hora_fim)}`),
+    ...turnos.map(
+      (t) =>
+        `- ${t.nome}: ${horaCurta(t.hora_inicio)} às ${horaCurta(t.hora_fim)}` +
+        (t.funcao ? ` (SÓ para a função ${t.funcao})` : ""),
+    ),
+    ...(turnos.some((t) => t.funcao)
+      ? [
+          "TURNO DA FUNÇÃO: quem é de uma função que tem turno próprio trabalha SÓ nesse turno, " +
+            "e esse turno não aceita ninguém de outra função.",
+        ]
+      : []),
     "",
     "PESSOAS DISPONÍVEIS (código, função, sexo):",
     ...funcionarios.map(
@@ -273,6 +284,8 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     throw new ErroIA("A IA devolveu uma resposta num formato inesperado. Tente de novo.");
   }
 
+  const turnoPorIdIA = new Map(turnos.map((t) => [t.id, t]));
+  const funcaoPorId = new Map(funcionarios.map((f) => [f.id, f.funcao]));
   // Volta dos códigos para os ids, descartando o que não existir e repetições.
   const vistos = new Set<string>();
   const saida: EscalaSugerida[] = [];
@@ -284,6 +297,10 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
       if (!funcionarioId) continue;
       // Folga fixa no domingo: tira, mesmo que a IA tenha escalado.
       if (temFolgaFixa(mapaFolgas, funcionarioId, q.data)) continue;
+      // Turno de outra função (ex.: Caixa): tira também.
+      const turno = turnoPorIdIA.get(turnoId);
+      const funcao = funcaoPorId.get(funcionarioId);
+      if (turno && funcao !== undefined && !podeTrabalharNoTurno(funcao, turno, turnos)) continue;
       const chave = `${q.data}|${turnoId}|${funcionarioId}`;
       if (vistos.has(chave)) continue;
       vistos.add(chave);

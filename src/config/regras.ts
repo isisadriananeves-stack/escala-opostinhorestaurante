@@ -60,10 +60,16 @@ export const REGRAS: RegrasDaCasa = {
         { funcao: "Cozinha", minimo: 1 },
         { funcao: "Chapa", minimo: 1 },
         { funcao: "Copa", minimo: 1 },
-        { funcao: "Caixa", minimo: 1 },
         { funcao: "Salão", minimo: 1 },
         { funcao: "Gerência", minimo: 1 },
       ],
+    },
+    {
+      // Turno próprio do caixa (11:36 às 21:00): só quem é da função Caixa.
+      turno: "Caixa",
+      dias: TODOS_OS_DIAS,
+      descricao: "Caixa, todos os dias",
+      funcoes: [{ funcao: "Caixa", minimo: 1 }],
     },
     {
       turno: "Almoço",
@@ -73,7 +79,6 @@ export const REGRAS: RegrasDaCasa = {
         { funcao: "Cozinha", minimo: 2 },
         { funcao: "Chapa", minimo: 2 },
         { funcao: "Copa", minimo: 1, observacao: "a partir das 11h" },
-        { funcao: "Caixa", minimo: 1, observacao: "a partir das 12h" },
         { funcao: "Salão", minimo: 2 },
         { funcao: "Gerência", minimo: 1 },
       ],
@@ -87,7 +92,6 @@ export const REGRAS: RegrasDaCasa = {
         { funcao: "Cozinha", minimo: 4, observacao: "3 desde as 9h e 1 a partir das 12h" },
         { funcao: "Copa", minimo: 2, observacao: "a partir das 11h" },
         { funcao: "Chapa", minimo: 2, observacao: "desde as 9h" },
-        { funcao: "Caixa", minimo: 1, observacao: "a partir das 12h" },
         { funcao: "Gerência", minimo: 1 },
       ],
     },

@@ -5,6 +5,7 @@ import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
+  CAMPOS_TURNO,
   type Escala,
   type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/alertas";
 import { descreverFolgaFixa, folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { buscarEscalas, escalar, tirarDaEscala } from "@/lib/escalas";
+import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
 
 // Célula aberta para escolher quem trabalha.
 type CelulaAberta = { data: string; turno: Turno };
@@ -118,7 +120,7 @@ export default function EscalaDaSemana() {
       try {
         const db = supabase();
         const [t, f, fx] = await Promise.all([
-          db.from("turnos").select("id, nome, hora_inicio, hora_fim, ordem").order("ordem"),
+          db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
           db
             .from("funcionarios")
             .select(CAMPOS_FUNCIONARIO_ESCALA)
@@ -455,6 +457,7 @@ export default function EscalaDaSemana() {
           celula={celula}
           funcionarios={funcionarios}
           escalados={escaladosNa(celula.data, celula.turno.id)}
+          turnos={turnos}
           folgasFixas={folgasFixas}
           alertas={resultado?.porCelula.get(chaveCelula(celula.data, celula.turno.id)) ?? []}
           salvandoId={salvandoId}
@@ -535,6 +538,7 @@ function EscolherEquipe({
   celula,
   funcionarios,
   escalados,
+  turnos,
   folgasFixas,
   alertas,
   salvandoId,
@@ -545,6 +549,7 @@ function EscolherEquipe({
   celula: CelulaAberta;
   funcionarios: Funcionario[];
   escalados: Funcionario[];
+  turnos: Turno[];
   folgasFixas: FolgaDomingo[];
   alertas: Alerta[];
   salvandoId: string | null;
@@ -555,7 +560,11 @@ function EscolherEquipe({
   const idsEscalados = new Set(escalados.map((f) => f.id));
   // Mostra os ativos e também quem está desativado mas já estava escalado aqui,
   // para poder tirar da escala.
-  const lista = funcionarios.filter((f) => f.ativo || idsEscalados.has(f.id));
+  // Turno com função própria (ex.: Caixa): só aparece quem pode trabalhar nele.
+  const lista = funcionarios.filter(
+    (f) =>
+      (f.ativo && podeTrabalharNoTurno(f.funcao, celula.turno, turnos)) || idsEscalados.has(f.id),
+  );
   const regra = regraDoQuadro(REGRAS, celula.turno, celula.data);
   const contagem = regra ? conferirMinimo(regra, escalados) : [];
   const mapaFolgas = folgasPorPessoa(folgasFixas);
@@ -593,6 +602,11 @@ function EscolherEquipe({
             {horaCurta(celula.turno.hora_inicio)} às {horaCurta(celula.turno.hora_fim)} ·{" "}
             {escalados.length} {escalados.length === 1 ? "pessoa escalada" : "pessoas escaladas"}
           </p>
+          {celula.turno.funcao && (
+            <p className="text-sm font-semibold text-neutral-700">
+              Só para a função {celula.turno.funcao}
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -661,6 +675,12 @@ function EscolherEquipe({
                       )}
                     </span>
                     <span className="block text-sm text-neutral-600">{f.funcao}</span>
+                    {marcado && !podeTrabalharNoTurno(f.funcao, celula.turno, turnos) && (
+                      <span className="block text-sm font-semibold text-red-700">
+                        ⚠ Não é deste turno ({motivoDoTurno(f.funcao, celula.turno)}): toque para
+                        tirar
+                      </span>
+                    )}
                     {folgaFixa && regraFolga && (
                       <span
                         className={`block text-sm font-semibold ${marcado ? "text-red-700" : "text-green-800"}`}
