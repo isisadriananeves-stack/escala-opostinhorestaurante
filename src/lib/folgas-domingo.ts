@@ -59,6 +59,7 @@ export function temFolgaFixa(
 export function descreverFolgaFixa(regra: FolgaDomingo): string {
   if (regra.tipo === "domingos_do_mes") {
     const lista = regra.domingos_do_mes ?? [];
+    if ([1, 2, 3, 4, 5].every((n) => lista.includes(n))) return "todos os domingos";
     const ordens = lista
       .filter((n) => n !== ULTIMO_DOMINGO)
       .sort((a, b) => a - b)
