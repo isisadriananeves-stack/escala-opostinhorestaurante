@@ -10,7 +10,14 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RegrasDaCasa } from "@/config/regras";
-import type { Escala, EscalaSugerida, FolgaDomingo, FuncionarioEscala, Turno } from "@/lib/tipos";
+import type {
+  DiaFechado,
+  Escala,
+  EscalaSugerida,
+  FolgaDomingo,
+  FuncionarioEscala,
+  Turno,
+} from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { podeTrabalharNoTurno } from "@/lib/turnos";
 import { DIAS_SEMANA, diaMes, diasDaSemana, horaCurta, paraData } from "@/lib/datas";
@@ -30,6 +37,8 @@ export type PedidoSugestao = {
   escalas: Escala[];
   // Folgas fixas de domingo: nesses dias a pessoa não pode ser escalada.
   folgasFixas: FolgaDomingo[];
+  // Dias com o restaurante fechado: ninguém trabalha e não contam como folga.
+  diasFechados: DiaFechado[];
 };
 
 export type SugestaoIA = {
@@ -66,7 +75,7 @@ function descreverRegras(regras: RegrasDaCasa): string {
   }
   linhas.push("");
   linhas.push(
-    `FOLGAS: cada pessoa precisa ter pelo menos ${regras.folgasPorSemana} dias sem nenhum turno na semana (domingo a sábado).`,
+    `FOLGAS: cada pessoa precisa ter pelo menos ${regras.folgasPorSemana} dias sem nenhum turno na semana (domingo a sábado). Dia com o restaurante FECHADO não conta como folga.`,
   );
   if (regras.domingos.mulheresEmDomingosAlternados) {
     linhas.push(
@@ -130,7 +139,8 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     throw new ErroIA("A variável ANTHROPIC_API_KEY não está configurada na Vercel.");
   }
 
-  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas } = pedido;
+  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas, diasFechados } = pedido;
+  const motivoFechado = new Map(diasFechados.map((d) => [d.data, d.motivo]));
   const dias = diasDaSemana(inicioSemana);
   const diasSet = new Set(dias);
   const mapaFolgas = folgasPorPessoa(folgasFixas);
@@ -201,6 +211,14 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     "",
     "REGRAS DA CASA:",
     descreverRegras(regras),
+    "",
+    "RESTAURANTE FECHADO (ninguém trabalha nesses dias, em nenhum turno):",
+    (() => {
+      const linhas = dias
+        .filter((dia) => motivoFechado.has(dia))
+        .map((dia) => `- ${nomeDoDia(dia)}: ${motivoFechado.get(dia)}`);
+      return linhas.length > 0 ? linhas.join("\n") : "(nenhum dia nesta semana)";
+    })(),
     "",
     "FOLGA FIXA NO DOMINGO (proibido escalar a pessoa nesse dia, em qualquer turno):",
     (() => {
@@ -292,6 +310,8 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
   for (const q of lida.quadros) {
     const turnoId = idPorCodigoTurno.get(q?.turno);
     if (!turnoId || !diasSet.has(q?.data) || !Array.isArray(q.pessoas)) continue;
+    // Dia fechado: ninguém trabalha, mesmo que a IA tenha escalado.
+    if (motivoFechado.has(q.data)) continue;
     for (const codigo of q.pessoas) {
       const funcionarioId = idPorCodigoPessoa.get(codigo);
       if (!funcionarioId) continue;

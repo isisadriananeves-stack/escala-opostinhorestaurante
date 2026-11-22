@@ -2,7 +2,13 @@
 // e devolve os alertas da semana. Não acessa o banco: recebe os dados prontos.
 
 import type { RegrasDaCasa, RegraDeMinimo } from "@/config/regras";
-import type { Escala, FolgaDomingo, FuncionarioEscala as Funcionario, Turno } from "@/lib/tipos";
+import type {
+  DiaFechado,
+  Escala,
+  FolgaDomingo,
+  FuncionarioEscala as Funcionario,
+  Turno,
+} from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
 import { diaMes, diasDaSemana, paraData, rotuloDia, somarDias } from "@/lib/datas";
@@ -101,10 +107,15 @@ export function periodoParaConferir(inicioSemana: string): { inicio: string; fim
 
 /**
  * Dias de folga de uma pessoa na semana: os dias sem nenhum turno.
+ * Dia com o restaurante fechado (ex.: Natal) NÃO conta como folga.
  * Usada nos alertas da Escala e na tela Folgas, para as duas contarem igual.
  */
-export function diasDeFolga(dias: string[], diasTrabalhados: Set<string> | undefined): string[] {
-  return dias.filter((d) => !diasTrabalhados?.has(d));
+export function diasDeFolga(
+  dias: string[],
+  diasTrabalhados: Set<string> | undefined,
+  fechados: Set<string> = new Set(),
+): string[] {
+  return dias.filter((d) => !diasTrabalhados?.has(d) && !fechados.has(d));
 }
 
 /** Regra de mínimo que vale para o turno nesse dia (ou undefined). */
@@ -141,8 +152,19 @@ export function calcularAlertas(params: {
   escalas: Escala[];
   // Folgas fixas de domingo (tabela folgas_domingo).
   folgasFixas?: FolgaDomingo[];
+  // Dias com o restaurante fechado (tabela dias_fechados).
+  diasFechados?: DiaFechado[];
 }): ResultadoAlertas {
-  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas = [] } = params;
+  const {
+    regras,
+    inicioSemana,
+    turnos,
+    funcionarios,
+    escalas,
+    folgasFixas = [],
+    diasFechados = [],
+  } = params;
+  const fechados = new Set(diasFechados.map((d) => d.data));
   const dias = diasDaSemana(inicioSemana);
   // A semana começa no domingo: ele é o primeiro dia.
   const domingo = dias[0];
@@ -165,8 +187,9 @@ export function calcularAlertas(params: {
       .map((id) => porId.get(id))
       .filter((f): f is Funcionario => Boolean(f));
 
-  // 1. Mínimo de pessoas por turno e função.
+  // 1. Mínimo de pessoas por turno e função (dia fechado não tem mínimo).
   for (const dia of dias) {
+    if (fechados.has(dia)) continue;
     for (const turno of turnos) {
       const regra = regraDoQuadro(regras, turno, dia);
       if (!regra) continue;
@@ -216,7 +239,7 @@ export function calcularAlertas(params: {
   // 3. Folgas na semana (dias sem nenhum turno).
   const ativos = funcionarios.filter((f) => f.ativo);
   for (const f of ativos) {
-    const folgas = diasDeFolga(dias, diasDaPessoa.get(f.id)).length;
+    const folgas = diasDeFolga(dias, diasDaPessoa.get(f.id), fechados).length;
     if (folgas < regras.folgasPorSemana) {
       alertas.push({
         tipo: "folga",
@@ -257,8 +280,8 @@ export function calcularAlertas(params: {
     const mes = NOMES_MES[paraData(domingo).getMonth()];
     for (const f of ativos.filter((p) => p.sexo === "M")) {
       if (!trabalhaNoDia(f.id, domingo)) continue;
-      const trabalhados = domingos.filter((d) => trabalhaNoDia(f.id, d)).length;
-      const folgas = domingos.length - trabalhados;
+      // Domingo com o restaurante fechado não conta como domingo de folga.
+      const folgas = domingos.filter((d) => !trabalhaNoDia(f.id, d) && !fechados.has(d)).length;
       if (folgas < folgaHomens) {
         alertas.push({
           tipo: "domingo",

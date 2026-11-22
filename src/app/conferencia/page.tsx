@@ -3,8 +3,10 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
+  CAMPOS_DIA_FECHADO,
   CAMPOS_FUNCIONARIO_CONFERENCIA,
   CAMPOS_TURNO,
+  type DiaFechado,
   type Escala,
   type FuncionarioConferencia as Funcionario,
   type RespostaMarcacoes,
@@ -83,6 +85,7 @@ export default function ConferenciaDoDia() {
 
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [diasFechados, setDiasFechados] = useState<DiaFechado[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [dados, setDados] = useState<DadosDoDia | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -93,12 +96,15 @@ export default function ConferenciaDoDia() {
     async function carregar() {
       try {
         const db = supabase();
-        const [t, f] = await Promise.all([
+        const [t, f, df] = await Promise.all([
           db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
           db.from("funcionarios").select(CAMPOS_FUNCIONARIO_CONFERENCIA).order("nome"),
+          db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
         ]);
         if (t.error) throw t.error;
         if (f.error) throw f.error;
+        if (df.error) throw df.error;
+        setDiasFechados(df.data ?? []);
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
       } catch (e) {
@@ -213,6 +219,15 @@ export default function ConferenciaDoDia() {
       </div>
 
       {erro && <AvisoErro mensagem={erro} />}
+
+      {diasFechados.some((d) => d.data === data) && (
+        <p className="cartao text-lg font-semibold text-neutral-800" role="status">
+          Restaurante fechado: {diasFechados.find((d) => d.data === data)?.motivo}.
+          <span className="block text-sm font-normal text-neutral-600">
+            Ninguém foi escalado neste dia. Se aparecer alguma batida de ponto, confira com a pessoa.
+          </span>
+        </p>
+      )}
 
       {carregando ? (
         <p className="text-neutral-600">Carregando escala e ponto...</p>

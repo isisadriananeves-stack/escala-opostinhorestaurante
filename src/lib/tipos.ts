@@ -48,6 +48,11 @@ export type Turno = {
 };
 export const CAMPOS_TURNO = "id, nome, hora_inicio, hora_fim, ordem, funcao";
 
+// Dia em que o restaurante não abre (tabela dias_fechados), ex.: 25/12 "Natal".
+// Ninguém é escalado, e o dia NÃO conta como folga na regra de folgas por semana.
+export type DiaFechado = { data: string; motivo: string };
+export const CAMPOS_DIA_FECHADO = "data, motivo";
+
 export type Escala = {
   id: string;
   data: string; // "2026-11-20"

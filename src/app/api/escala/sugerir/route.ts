@@ -10,10 +10,12 @@ import { paraData } from "@/lib/datas";
 import { ErroIA, sugerirEscala } from "@/lib/integracoes/anthropic";
 import { conferirLogin } from "@/lib/login-servidor";
 import {
+  CAMPOS_DIA_FECHADO,
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   CAMPOS_TURNO,
   type Escala,
+  type DiaFechado,
   type FolgaDomingo,
   type FuncionarioEscala,
   type RespostaSugestao,
@@ -48,9 +50,10 @@ export async function POST(request: Request) {
   let funcionarios: FuncionarioEscala[];
   let escalas: Escala[];
   let folgasFixas: FolgaDomingo[];
+  let diasFechados: DiaFechado[];
   try {
     const { inicio, fim } = periodoParaConferir(inicioSemana);
-    const [t, f, e, fx] = await Promise.all([
+    const [t, f, e, fx, df] = await Promise.all([
       login.db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
       login.db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).eq("ativo", true).order("funcao").order("nome"),
       login.db
@@ -59,12 +62,15 @@ export async function POST(request: Request) {
         .gte("data", inicio)
         .lte("data", fim),
       login.db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
+      login.db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
     ]);
     if (t.error) throw t.error;
     if (f.error) throw f.error;
     if (e.error) throw e.error;
     if (fx.error) throw fx.error;
     folgasFixas = fx.data ?? [];
+    if (df.error) throw df.error;
+    diasFechados = df.data ?? [];
     turnos = t.data ?? [];
     funcionarios = f.data ?? [];
     escalas = e.data ?? [];
@@ -90,6 +96,7 @@ export async function POST(request: Request) {
       funcionarios,
       escalas,
       folgasFixas,
+      diasFechados,
     });
     return Response.json(sugestao satisfies RespostaSugestao);
   } catch (e) {

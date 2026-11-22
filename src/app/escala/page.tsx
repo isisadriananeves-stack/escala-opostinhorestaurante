@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
+  CAMPOS_DIA_FECHADO,
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   CAMPOS_TURNO,
+  type DiaFechado,
   type Escala,
   type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
@@ -90,6 +92,7 @@ export default function EscalaDaSemana() {
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [folgasFixas, setFolgasFixas] = useState<FolgaDomingo[]>([]);
+  const [diasFechados, setDiasFechados] = useState<DiaFechado[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [escalas, setEscalas] = useState<Escala[]>([]);
   const [semanaCarregada, setSemanaCarregada] = useState<string | null>(null);
@@ -119,7 +122,7 @@ export default function EscalaDaSemana() {
     async function carregarCadastros() {
       try {
         const db = supabase();
-        const [t, f, fx] = await Promise.all([
+        const [t, f, fx, df] = await Promise.all([
           db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
           db
             .from("funcionarios")
@@ -127,10 +130,13 @@ export default function EscalaDaSemana() {
             .order("funcao")
             .order("nome"),
           db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
+          db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
         ]);
         if (t.error) throw t.error;
         if (f.error) throw f.error;
         if (fx.error) throw fx.error;
+        if (df.error) throw df.error;
+        setDiasFechados(df.data ?? []);
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
         setFolgasFixas(fx.data ?? []);
@@ -266,8 +272,19 @@ export default function EscalaDaSemana() {
 
   const resultado: ResultadoAlertas | null =
     inicioSemana && !carregando
-      ? calcularAlertas({ regras: REGRAS, inicioSemana, turnos, funcionarios, escalas, folgasFixas })
+      ? calcularAlertas({
+          regras: REGRAS,
+          inicioSemana,
+          turnos,
+          funcionarios,
+          escalas,
+          folgasFixas,
+          diasFechados,
+        })
       : null;
+
+  // Dias com o restaurante fechado (ex.: Natal): data -> motivo.
+  const motivoFechado = new Map(diasFechados.map((d) => [d.data, d.motivo]));
 
   const tituloSemana = inicioSemana
     ? `${diaMes(inicioSemana)} a ${diaMes(somarDias(inicioSemana, 6))}`
@@ -365,6 +382,11 @@ export default function EscalaDaSemana() {
                       }`}
                     >
                       {rotuloDia(dia)}
+                      {motivoFechado.get(dia) && (
+                        <span className="block font-sans text-xs font-semibold text-neutral-600">
+                          Fechado · {motivoFechado.get(dia)}
+                        </span>
+                      )}
                       {dia === hoje && (
                         <span className="block font-sans text-xs font-semibold text-amber-700">hoje</span>
                       )}
@@ -386,6 +408,19 @@ export default function EscalaDaSemana() {
                       const alertasDoQuadro =
                         resultado?.porCelula.get(chaveCelula(dia, turno.id)) ?? [];
                       const comAlerta = alertasDoQuadro.length > 0;
+                      const fechado = motivoFechado.get(dia);
+                      if (fechado && escalados.length === 0) {
+                        return (
+                          <td key={dia} className="border-b border-neutral-200 p-1 align-top">
+                            <div
+                              className="flex min-h-[96px] w-full items-center justify-center rounded-xl bg-neutral-100 p-2 text-center text-sm font-semibold text-neutral-500"
+                              aria-label={`${turno.nome}, ${rotuloDia(dia)}: restaurante fechado (${fechado})`}
+                            >
+                              Fechado
+                            </div>
+                          </td>
+                        );
+                      }
                       return (
                         <td
                           key={dia}
@@ -475,6 +510,7 @@ export default function EscalaDaSemana() {
           funcionarios={funcionarios}
           escalasAtuais={escalas}
           folgasFixas={folgasFixas}
+          diasFechados={diasFechados}
           salvando={salvandoProposta}
           erro={erroProposta}
           onAprovar={aprovarProposta}

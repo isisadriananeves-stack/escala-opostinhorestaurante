@@ -247,6 +247,40 @@ create trigger confere_funcao_do_turno before insert or update of turno_id, func
   for each row execute function escalas_confere_funcao_do_turno();
 
 -- ---------------------------------------------------------------------
+-- Dias com o restaurante fechado (ex.: Natal). Ninguém é escalado, e o dia
+-- NÃO conta como folga na regra de folgas por semana (src/lib/alertas.ts).
+-- ---------------------------------------------------------------------
+create table if not exists dias_fechados (
+  data date primary key,
+  motivo text not null check (char_length(btrim(motivo)) between 2 and 60),
+  criado_em timestamptz not null default now()
+);
+alter table dias_fechados enable row level security;
+drop policy if exists "equipe autorizada" on dias_fechados;
+create policy "equipe autorizada" on dias_fechados for all to authenticated
+  using (usuario_autorizado()) with check (usuario_autorizado());
+
+-- O banco recusa escalar alguém num dia fechado.
+create or replace function escalas_confere_dia_fechado() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  motivo_dia text;
+begin
+  select motivo into motivo_dia from dias_fechados where data = new.data;
+  if motivo_dia is not null then
+    raise exception 'Restaurante fechado neste dia (%): ninguém pode ser escalado.', motivo_dia
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+drop trigger if exists confere_dia_fechado on escalas;
+create trigger confere_dia_fechado before insert or update of data on escalas
+  for each row execute function escalas_confere_dia_fechado();
+
+insert into dias_fechados (data, motivo) values ('2026-12-25', 'Natal')
+on conflict (data) do nothing;
+
+-- ---------------------------------------------------------------------
 -- Dados de exemplo (restaurante fictício Vila Tempero)
 -- Os CPFs são fictícios e batem com a API de ponto de demonstração.
 -- ---------------------------------------------------------------------
