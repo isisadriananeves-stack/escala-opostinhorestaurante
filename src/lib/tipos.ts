@@ -15,6 +15,9 @@ export type Funcionario = {
   criado_em?: string;
   // Data em que a pessoa entrou no restaurante, "AAAA-MM-DD" (Pontomais ou tela Equipe).
   data_admissao?: string | null;
+  // Turno em que a pessoa costuma trabalhar (id do turno). Usado no "Preencher semana"
+  // e no "Modo folga" da aba Folgas.
+  turno_padrao?: string | null;
 };
 
 // O que cada tela busca de um funcionário: só o que ela mostra ou usa.
@@ -24,14 +27,17 @@ export const CAMPOS_FUNCIONARIO_INICIO = "id, nome, funcao, data_admissao";
 export type FuncionarioInicio = Pick<Funcionario, "id" | "nome" | "funcao" | "data_admissao">;
 
 export const CAMPOS_FUNCIONARIO_EQUIPE =
-  "id, nome, funcao, telefone, ativo, sexo, cpf_final, data_admissao";
+  "id, nome, funcao, telefone, ativo, sexo, cpf_final, data_admissao, turno_padrao";
 export type FuncionarioEquipe = Pick<
   Funcionario,
-  "id" | "nome" | "funcao" | "telefone" | "ativo" | "sexo" | "cpf_final" | "data_admissao"
+  "id" | "nome" | "funcao" | "telefone" | "ativo" | "sexo" | "cpf_final" | "data_admissao" | "turno_padrao"
 >;
 
-export const CAMPOS_FUNCIONARIO_ESCALA = "id, nome, funcao, ativo, sexo";
-export type FuncionarioEscala = Pick<Funcionario, "id" | "nome" | "funcao" | "ativo" | "sexo">;
+export const CAMPOS_FUNCIONARIO_ESCALA = "id, nome, funcao, ativo, sexo, turno_padrao";
+export type FuncionarioEscala = Pick<
+  Funcionario,
+  "id" | "nome" | "funcao" | "ativo" | "sexo" | "turno_padrao"
+>;
 
 export const CAMPOS_FUNCIONARIO_CONFERENCIA = "id, nome, funcao, cpf_final";
 export type FuncionarioConferencia = Pick<Funcionario, "id" | "nome" | "funcao" | "cpf_final">;

@@ -91,6 +91,9 @@ create table if not exists turnos (
 -- Quem é de uma função com turno próprio só trabalha nesse turno (gatilho confere_funcao_do_turno).
 alter table turnos add column if not exists funcao text;
 
+-- Turno em que cada pessoa costuma trabalhar (usado no "Preencher semana" da aba Folgas).
+alter table funcionarios add column if not exists turno_padrao uuid references turnos (id) on delete set null;
+
 -- Escala: quem trabalha em qual turno em qual dia
 create table if not exists escalas (
   id uuid primary key default gen_random_uuid(),

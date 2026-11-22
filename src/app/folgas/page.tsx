@@ -43,11 +43,40 @@ import {
   regraDaFolga,
   temFolgaFixa,
 } from "@/lib/folgas-domingo";
-import { buscarEscalas, escalar, tirarDaEscala } from "@/lib/escalas";
+import { buscarEscalas, escalar, escalarVarias, tirarDaEscala } from "@/lib/escalas";
 import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
 
 // Dia aberto para editar: de quem e qual dia.
 type DiaAberto = { funcionarioId: string; dia: string };
+
+// "Modo folga" (tocar no dia troca entre folga e o turno padrão): a tela lembra
+// a escolha neste aparelho. Se o navegador não deixar guardar, vale só até fechar.
+const CHAVE_MODO_FOLGA = "folgas:modo-folga";
+let modoFolgaNaMemoria = false;
+const ouvintesModo = new Set<() => void>();
+function lerModoFolga(): boolean {
+  try {
+    const salvo = localStorage.getItem(CHAVE_MODO_FOLGA);
+    return salvo === null ? modoFolgaNaMemoria : salvo === "1";
+  } catch {
+    return modoFolgaNaMemoria;
+  }
+}
+function gravarModoFolga(ligado: boolean) {
+  modoFolgaNaMemoria = ligado;
+  try {
+    localStorage.setItem(CHAVE_MODO_FOLGA, ligado ? "1" : "0");
+  } catch {
+    // sem armazenamento: fica só na memória
+  }
+  ouvintesModo.forEach((avisar) => avisar());
+}
+function assinarModoFolga(avisar: () => void) {
+  ouvintesModo.add(avisar);
+  return () => {
+    ouvintesModo.delete(avisar);
+  };
+}
 
 // A data de hoje vem do celular (no servidor não há "hoje": fica vazio).
 const nadaParaOuvir = () => () => {};
@@ -99,6 +128,9 @@ export default function Folgas() {
   const [aberto, setAberto] = useState<DiaAberto | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erroJanela, setErroJanela] = useState<string | null>(null);
+  // Recado no topo da tela (preencher semana, modo folga).
+  const [avisoTopo, setAvisoTopo] = useState<{ ok: boolean; texto: string } | null>(null);
+  const modoFolga = useSyncExternalStore(assinarModoFolga, lerModoFolga, () => false);
   // Ordem dos cartões "congelada" ao abrir um dia, para o cartão não pular de lugar
   // enquanto você edita. Volta a ordenar ao trocar de semana.
   const [ordemCongelada, setOrdemCongelada] = useState<string[] | null>(null);
@@ -157,6 +189,7 @@ export default function Folgas() {
   function trocarSemana(novoDeslocamento: number) {
     setDeslocamento(novoDeslocamento);
     setOrdemCongelada(null);
+    setAvisoTopo(null);
     fecharJanela();
   }
 
@@ -167,7 +200,9 @@ export default function Folgas() {
     try {
       await mudanca();
     } catch (e) {
-      setErroJanela(mensagemDeErro(e));
+      // Com a janela do dia aberta, o erro aparece nela; senão, no topo da tela.
+      if (aberto) setErroJanela(mensagemDeErro(e));
+      else setAvisoTopo({ ok: false, texto: `Não foi possível salvar. Detalhe: ${mensagemDeErro(e)}` });
       if (inicioSemana) {
         try {
           setEscalas(await buscarEscalas(inicioSemana));
@@ -293,6 +328,93 @@ export default function Folgas() {
     setAberto({ funcionarioId, dia });
   }
 
+  const congelarOrdem = () => {
+    if (!ordemCongelada) setOrdemCongelada(linhas.map((l) => l.funcionario.id));
+  };
+
+  // Turno padrão válido da pessoa (respeita o turno da função, ex.: Caixa).
+  const turnoPadraoDe = (f: Funcionario): Turno | null => {
+    const turno = f.turno_padrao ? turnoPorId.get(f.turno_padrao) : undefined;
+    return turno && podeTrabalharNoTurno(f.funcao, turno, turnos) ? turno : null;
+  };
+
+  // Preencher semana: todo mundo trabalhando todos os dias no turno padrão,
+  // menos folga fixa de domingo e dia fechado. Quem já tem escala na semana fica como está.
+  function preencherSemana() {
+    const novas: { data: string; turno_id: string; funcionario_id: string }[] = [];
+    const semTurno: string[] = [];
+    let pessoas = 0;
+    let jaTinham = 0;
+    for (const f of funcionarios.filter((p) => p.ativo)) {
+      if (escalas.some((e) => e.funcionario_id === f.id && dias.includes(e.data))) {
+        jaTinham++;
+        continue;
+      }
+      const turno = turnoPadraoDe(f);
+      if (!turno) {
+        semTurno.push(f.nome.split(/\s+/)[0]);
+        continue;
+      }
+      const daPessoa = dias
+        .filter((d) => !fechados.has(d) && !temFolgaFixa(mapaFolgas, f.id, d))
+        .map((d) => ({ data: d, turno_id: turno.id, funcionario_id: f.id }));
+      if (daPessoa.length > 0) pessoas++;
+      novas.push(...daPessoa);
+    }
+    const extras = [
+      jaTinham > 0
+        ? `${jaTinham} ${jaTinham === 1 ? "pessoa já tem" : "pessoas já têm"} escala nesta semana e ${jaTinham === 1 ? "fica" : "ficam"} como está.`
+        : "",
+      semTurno.length > 0 ? `Sem turno padrão (cadastre na tela Equipe): ${semTurno.join(", ")}.` : "",
+    ].filter(Boolean);
+    if (novas.length === 0) {
+      setAvisoTopo({ ok: false, texto: ["Nada para preencher.", ...extras].join(" ") });
+      return;
+    }
+    const pergunta = [
+      `Vai marcar ${novas.length} turnos para ${pessoas} ${pessoas === 1 ? "pessoa" : "pessoas"}, no turno padrão de cada uma (menos folgas fixas de domingo e dias fechados).`,
+      ...extras,
+      "Confirmar?",
+    ].join("\n\n");
+    if (!window.confirm(pergunta)) return;
+    congelarOrdem();
+    setAvisoTopo(null);
+    return gravar(async () => {
+      const criadas = await escalarVarias(novas);
+      setEscalas((lista) => [...lista, ...criadas]);
+      setAvisoTopo({
+        ok: true,
+        texto: [
+          `Pronto: ${criadas.length} turnos marcados. Agora marque as folgas de cada pessoa.`,
+          ...extras,
+        ].join(" "),
+      });
+    });
+  }
+
+  // Modo folga: um toque troca o dia entre folga e o turno padrão.
+  function alternarRapido(f: Funcionario, dia: string) {
+    congelarOrdem();
+    setAvisoTopo(null);
+    const doDia = escalas.filter((e) => e.data === dia && e.funcionario_id === f.id);
+    if (doDia.length > 0) return marcarFolga(f.id, dia);
+    if (fechados.has(dia)) {
+      setAvisoTopo({ ok: false, texto: `Restaurante fechado neste dia (${motivoFechado.get(dia)}).` });
+      return;
+    }
+    if (temFolgaFixa(mapaFolgas, f.id, dia)) {
+      setAvisoTopo({ ok: false, texto: `${f.nome.split(/\s+/)[0]} tem folga fixa neste domingo.` });
+      return;
+    }
+    const turno = turnoPadraoDe(f);
+    // Sem turno padrão: abre a janela para escolher o turno.
+    if (!turno) return abrirDia(f.id, dia);
+    return gravar(async () => {
+      const nova = await escalar(f.id, dia, turno.id);
+      setEscalas((lista) => [...lista, nova]);
+    });
+  }
+
   const pessoaAberta = aberto ? funcionarios.find((f) => f.id === aberto.funcionarioId) : null;
 
   const abaixoDoMinimo = linhas.filter((l) => l.falta > 0).length;
@@ -365,6 +487,62 @@ export default function Folgas() {
             </p>
           </section>
 
+          <section className="cartao space-y-3" aria-label="Montar a semana">
+            <button
+              type="button"
+              className="botao w-full"
+              onClick={preencherSemana}
+              disabled={salvando}
+            >
+              Preencher semana
+            </button>
+            <p className="text-sm text-neutral-600">
+              Marca todo mundo em todos os dias, no turno padrão de cada um (menos folgas fixas
+              de domingo e dias fechados). Quem já tem escala nesta semana não muda.
+            </p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={modoFolga}
+              onClick={() => gravarModoFolga(!modoFolga)}
+              className={`flex w-full items-center justify-between gap-3 rounded-lg border-2 px-4 py-3 text-left font-semibold ${
+                modoFolga
+                  ? "border-green-600 bg-green-50 text-green-900"
+                  : "border-[color:var(--cor-borda)] bg-white text-neutral-800"
+              }`}
+            >
+              <span>
+                Modo folga
+                <span className="block text-sm font-normal">
+                  {modoFolga
+                    ? "Ligado: um toque no dia troca entre folga e o turno padrão."
+                    : "Desligado: tocar no dia abre a janela para escolher."}
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                  modoFolga ? "bg-green-600" : "bg-neutral-300"
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    modoFolga ? "left-6" : "left-1"
+                  }`}
+                />
+              </span>
+            </button>
+            {salvando && <p className="text-sm text-neutral-600">Salvando...</p>}
+            {avisoTopo && (
+              <p
+                className={`text-sm font-semibold ${avisoTopo.ok ? "text-green-800" : "text-red-700"}`}
+                role={avisoTopo.ok ? "status" : "alert"}
+              >
+                {avisoTopo.texto}
+              </p>
+            )}
+          </section>
+
           <ul className="space-y-3">
             {linhas.map((l) => (
               <CartaoFolgas
@@ -373,7 +551,10 @@ export default function Folgas() {
                 dias={dias}
                 semSexo={idsSemSexo.has(l.funcionario.id)}
                 fechados={fechados}
-                onAbrirDia={(dia) => abrirDia(l.funcionario.id, dia)}
+                desabilitado={salvando}
+                onAbrirDia={(dia) =>
+                  modoFolga ? alternarRapido(l.funcionario, dia) : abrirDia(l.funcionario.id, dia)
+                }
               />
             ))}
           </ul>
@@ -408,12 +589,14 @@ function CartaoFolgas({
   dias,
   semSexo,
   fechados,
+  desabilitado,
   onAbrirDia,
 }: {
   linha: Linha;
   dias: string[];
   semSexo: boolean;
   fechados: Set<string>;
+  desabilitado: boolean;
   onAbrirDia: (dia: string) => void;
 }) {
   const { funcionario, turnosPorDia, folgas, falta, folgaNoDomingo, regraFixa, folgaFixaHoje, avisosDomingo } =
@@ -451,6 +634,7 @@ function CartaoFolgas({
               <button
                 type="button"
                 onClick={() => onAbrirDia(dia)}
+                disabled={desabilitado}
                 aria-label={`${funcionario.nome}, ${nomeDia} ${diaMes(dia)}: ${
                   fechado
                     ? "restaurante fechado"

@@ -5,10 +5,13 @@ import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import { hojeISO } from "@/lib/datas";
 import {
   CAMPOS_FUNCIONARIO_EQUIPE,
+  CAMPOS_TURNO,
   FUNCOES_PADRAO,
   type FuncionarioEquipe as Funcionario,
   type ResumoAdmissoes,
+  type Turno,
 } from "@/lib/tipos";
+import { podeTrabalharNoTurno } from "@/lib/turnos";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
 import {
   NOME_MAXIMO,
@@ -38,6 +41,8 @@ type Formulario = {
   sexo: "" | "F" | "M";
   // Data de entrada no restaurante, "AAAA-MM-DD" (vazio = não informada).
   dataAdmissao: string;
+  // Turno padrão (id do turno); vazio = sem turno padrão.
+  turnoPadrao: string;
 };
 
 const FORMULARIO_VAZIO: Formulario = {
@@ -48,6 +53,7 @@ const FORMULARIO_VAZIO: Formulario = {
   cpfFinalAtual: null,
   sexo: "",
   dataAdmissao: "",
+  turnoPadrao: "",
 };
 
 /** "12345678901" -> "123.456.789-01" (deixa como está se não tiver 11 dígitos). */
@@ -105,6 +111,7 @@ async function buscarFuncionarios(): Promise<Funcionario[]> {
 export default function Equipe() {
   const semVariaveis = !variaveisConfiguradas();
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [turnos, setTurnos] = useState<Turno[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [formulario, setFormulario] = useState<Formulario | null>(null);
@@ -128,8 +135,15 @@ export default function Equipe() {
 
   useEffect(() => {
     if (semVariaveis) return;
-    buscarFuncionarios()
-      .then(setFuncionarios)
+    Promise.all([
+      buscarFuncionarios(),
+      supabase().from("turnos").select(CAMPOS_TURNO).order("ordem"),
+    ])
+      .then(([lista, t]) => {
+        if (t.error) throw t.error;
+        setFuncionarios(lista);
+        setTurnos(t.data ?? []);
+      })
       .catch((e) => setErro(mensagemDeErro(e)))
       .finally(() => setCarregando(false));
   }, [semVariaveis]);
@@ -175,6 +189,7 @@ export default function Equipe() {
       cpfFinalAtual: f.cpf_final,
       sexo: f.sexo ?? "",
       dataAdmissao: f.data_admissao ?? "",
+      turnoPadrao: f.turno_padrao ?? "",
     });
     // O formulário fica no topo da tela: rola até ele.
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -211,6 +226,7 @@ export default function Equipe() {
         telefone: telefone || null,
         sexo: formulario.sexo || null,
         data_admissao: formulario.dataAdmissao || null,
+        turno_padrao: formulario.turnoPadrao || null,
         // Na edição, CPF vazio = manter o atual (o navegador nem conhece o CPF completo).
         ...(cpf ? { cpf } : formulario.id ? {} : { cpf: null }),
       };
@@ -291,13 +307,41 @@ export default function Equipe() {
             <select
               className="campo"
               value={formulario.funcao}
-              onChange={(e) => setFormulario({ ...formulario, funcao: e.target.value })}
+              onChange={(e) => {
+                const funcao = e.target.value;
+                // Se o turno padrão não vale para a nova função (ex.: Caixa), limpa.
+                const turno = turnos.find((t) => t.id === formulario.turnoPadrao);
+                const turnoPadrao =
+                  turno && podeTrabalharNoTurno(funcao, turno, turnos) ? formulario.turnoPadrao : "";
+                setFormulario({ ...formulario, funcao, turnoPadrao });
+              }}
             >
               {funcoes.map((funcao) => (
                 <option key={funcao} value={funcao}>
                   {funcao}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block font-medium">Turno padrão</span>
+            <span className="mb-2 block text-sm text-neutral-600">
+              Turno em que a pessoa costuma trabalhar. Usado no &quot;Preencher semana&quot; da aba
+              Folgas.
+            </span>
+            <select
+              className="campo"
+              value={formulario.turnoPadrao}
+              onChange={(e) => setFormulario({ ...formulario, turnoPadrao: e.target.value })}
+            >
+              <option value="">Sem turno padrão</option>
+              {turnos
+                .filter((t) => podeTrabalharNoTurno(formulario.funcao, t, turnos))
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nome}
+                  </option>
+                ))}
             </select>
           </label>
           <label className="block">
@@ -457,7 +501,7 @@ export default function Equipe() {
           <ul className="space-y-3">
             {ativos.map((f) => (
               <li key={f.id} className="cartao">
-                <CartaoFuncionario funcionario={f} />
+                <CartaoFuncionario funcionario={f} turnos={turnos} />
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -486,7 +530,7 @@ export default function Equipe() {
               <ul className="space-y-3">
                 {inativos.map((f) => (
                   <li key={f.id} className="cartao opacity-75">
-                    <CartaoFuncionario funcionario={f} />
+                    <CartaoFuncionario funcionario={f} turnos={turnos} />
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <button
                         type="button"
@@ -514,7 +558,8 @@ export default function Equipe() {
   );
 }
 
-function CartaoFuncionario({ funcionario }: { funcionario: Funcionario }) {
+function CartaoFuncionario({ funcionario, turnos }: { funcionario: Funcionario; turnos: Turno[] }) {
+  const turnoPadrao = turnos.find((t) => t.id === funcionario.turno_padrao);
   return (
     <div>
       <p className="text-lg font-semibold">{funcionario.nome}</p>
@@ -524,6 +569,11 @@ function CartaoFuncionario({ funcionario }: { funcionario: Funcionario }) {
           <span className="text-neutral-500"> · {ROTULO_SEXO[funcionario.sexo]}</span>
         ) : (
           <span className="text-amber-700"> · sexo não informado</span>
+        )}
+        {turnoPadrao ? (
+          <span className="text-neutral-500"> · Turno: {turnoPadrao.nome}</span>
+        ) : (
+          <span className="text-amber-700"> · sem turno padrão</span>
         )}
       </p>
       <p className="text-sm text-neutral-600">

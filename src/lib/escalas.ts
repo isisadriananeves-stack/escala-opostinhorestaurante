@@ -44,3 +44,13 @@ export async function tirarDaEscala(ids: string[]): Promise<void> {
   const { error } = await supabase().from("escalas").delete().in("id", ids);
   if (error) throw error;
 }
+
+/** Põe várias pessoas em vários turnos de uma vez. Devolve as escalas criadas. */
+export async function escalarVarias(
+  lista: { data: string; turno_id: string; funcionario_id: string }[],
+): Promise<Escala[]> {
+  if (lista.length === 0) return [];
+  const { data, error } = await supabase().from("escalas").insert(lista).select(CAMPOS_ESCALA);
+  if (error) throw error;
+  return data ?? [];
+}
