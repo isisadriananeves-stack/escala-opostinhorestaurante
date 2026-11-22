@@ -23,11 +23,11 @@ import {
   diasDaSemana,
   hojeISO,
   horaCurta,
-  inicioDaSemana,
   paraData,
   somarDias,
 } from "@/lib/datas";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
+import { antesDoInicio, podeVoltar, semanaMostrada } from "@/lib/semanas";
 import { REGRAS } from "@/config/regras";
 import {
   calcularAlertas,
@@ -85,7 +85,8 @@ export default function Folgas() {
   const semVariaveis = !variaveisConfiguradas();
   const hoje = useHoje();
   const [deslocamento, setDeslocamento] = useState(0);
-  const inicioSemana = hoje ? somarDias(inicioDaSemana(hoje), 7 * deslocamento) : null;
+  // Antes do início das escalas (REGRAS.inicioDasEscalas), abre na primeira semana com escala.
+  const inicioSemana = hoje ? semanaMostrada(hoje, deslocamento) : null;
 
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
@@ -312,8 +313,9 @@ export default function Folgas() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
           onClick={() => trocarSemana(deslocamento - 1)}
-          disabled={!inicioSemana || salvando}
+          disabled={!inicioSemana || !podeVoltar(inicioSemana) || salvando}
           aria-label="Semana anterior"
+          title={inicioSemana && !podeVoltar(inicioSemana) ? "As escalas começam nesta semana" : undefined}
         >
           ◀ Anterior
         </button>
@@ -323,7 +325,7 @@ export default function Folgas() {
           onClick={() => trocarSemana(0)}
           disabled={!inicioSemana || deslocamento === 0 || salvando}
         >
-          Hoje
+          {hoje && antesDoInicio(hoje) ? "Início" : "Hoje"}
         </button>
         <button
           type="button"

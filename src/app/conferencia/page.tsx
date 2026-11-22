@@ -168,6 +168,8 @@ export default function ConferenciaDoDia() {
         })
       : null;
   const futuro = Boolean(data && hoje && data > hoje);
+  // Antes do início das escalas, não há escala para cobrar: as batidas são só informação.
+  const antesDasEscalas = Boolean(data && data < REGRAS.inicioDasEscalas);
 
   return (
     <div className="space-y-4">
@@ -229,13 +231,23 @@ export default function ConferenciaDoDia() {
         </p>
       )}
 
+      {data && data < REGRAS.inicioDasEscalas && (
+        <p className="cartao text-lg font-semibold text-neutral-800" role="status">
+          As escalas começam em {diaMes(REGRAS.inicioDasEscalas)}: não há escala para conferir
+          neste dia.
+          <span className="block text-sm font-normal text-neutral-600">
+            Se aparecerem batidas de ponto abaixo, elas são só para informação.
+          </span>
+        </p>
+      )}
+
       {carregando ? (
         <p className="text-neutral-600">Carregando escala e ponto...</p>
       ) : (
         <>
           <AvisoDaFonte ponto={ponto} erroPonto={dados?.erroPonto ?? null} futuro={futuro} />
 
-          {resultado && !futuro && temDados && (
+          {resultado && !futuro && temDados && !antesDasEscalas && (
             <section className="grid grid-cols-3 gap-2" aria-label="Resumo do dia">
               <Contador
                 rotulo={resultado.resumo.atrasos === 1 ? "Atraso" : "Atrasos"}
@@ -266,7 +278,7 @@ export default function ConferenciaDoDia() {
             </section>
           )}
 
-          {resultado && (
+          {resultado && !antesDasEscalas && (
             <section className="space-y-3">
               <h2 className="text-xl">Escalados ({resultado.escalados.length})</h2>
               {resultado.escalados.length === 0 ? (
@@ -285,9 +297,14 @@ export default function ConferenciaDoDia() {
 
           {resultado && resultado.naoEscalados.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-xl">Não escalados ({resultado.naoEscalados.length})</h2>
+              <h2 className="text-xl">
+                {antesDasEscalas ? "Batidas de ponto" : "Não escalados"} (
+                {resultado.naoEscalados.length})
+              </h2>
               <p className="text-sm text-neutral-600">
-                Bateram ponto, mas não estavam na escala deste dia.
+                {antesDasEscalas
+                  ? "Só para informação: as escalas ainda não tinham começado neste dia."
+                  : "Bateram ponto, mas não estavam na escala deste dia."}
               </p>
               <ul className="space-y-3">
                 {resultado.naoEscalados.map(({ funcionario, marcacao }) => (

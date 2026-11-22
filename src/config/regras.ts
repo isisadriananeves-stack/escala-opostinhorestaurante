@@ -26,6 +26,9 @@ export type RegraDeMinimo = {
 };
 
 export type RegrasDaCasa = {
+  // Primeiro dia com escala no sistema (um domingo, "AAAA-MM-DD"). As telas não
+  // mostram semanas antes dele, e a Conferência não cobra escala antes dele.
+  inicioDasEscalas: string;
   minimos: RegraDeMinimo[];
   // Dias sem nenhum turno na semana (domingo a sábado).
   folgasPorSemana: number;
@@ -54,6 +57,7 @@ export type RegrasDaCasa = {
 };
 
 export const REGRAS: RegrasDaCasa = {
+  inicioDasEscalas: "2026-12-13",
   minimos: [
     {
       turno: "Jantar",

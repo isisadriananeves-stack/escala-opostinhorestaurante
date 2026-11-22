@@ -7,6 +7,7 @@
 import { REGRAS } from "@/config/regras";
 import { periodoParaConferir } from "@/lib/alertas";
 import { paraData } from "@/lib/datas";
+import { PRIMEIRA_SEMANA } from "@/lib/semanas";
 import { ErroIA, sugerirEscala } from "@/lib/integracoes/anthropic";
 import { conferirLogin } from "@/lib/login-servidor";
 import {
@@ -42,6 +43,12 @@ export async function POST(request: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(inicioSemana) || paraData(inicioSemana).getDay() !== 0) {
     return Response.json(
       { erro: "Semana inválida. Envie o domingo no formato AAAA-MM-DD." },
+      { status: 400 },
+    );
+  }
+  if (inicioSemana < PRIMEIRA_SEMANA) {
+    return Response.json(
+      { erro: "As escalas começam na semana de " + PRIMEIRA_SEMANA.split("-").reverse().join("/") + "." },
       { status: 400 },
     );
   }

@@ -19,12 +19,12 @@ import {
   diasDaSemana,
   hojeISO,
   horaCurta,
-  inicioDaSemana,
   rotuloDia,
   somarDias,
 } from "@/lib/datas";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
 import { PropostaEscala, diferencaDaProposta } from "@/components/PropostaEscala";
+import { antesDoInicio, podeVoltar, semanaMostrada } from "@/lib/semanas";
 import { REGRAS } from "@/config/regras";
 import {
   calcularAlertas,
@@ -87,7 +87,8 @@ export default function EscalaDaSemana() {
   const hoje = useHoje();
   // Quantas semanas para frente (+) ou para trás (-) da semana atual.
   const [deslocamento, setDeslocamento] = useState(0);
-  const inicioSemana = hoje ? somarDias(inicioDaSemana(hoje), 7 * deslocamento) : null;
+  // Antes do início das escalas (REGRAS.inicioDasEscalas), abre na primeira semana com escala.
+  const inicioSemana = hoje ? semanaMostrada(hoje, deslocamento) : null;
 
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
@@ -303,8 +304,9 @@ export default function EscalaDaSemana() {
           type="button"
           className="botao-secundario whitespace-nowrap px-1 text-sm! tracking-normal!"
           onClick={() => setDeslocamento((d) => d - 1)}
-          disabled={!inicioSemana || sugerindo}
+          disabled={!inicioSemana || !podeVoltar(inicioSemana) || sugerindo}
           aria-label="Semana anterior"
+          title={inicioSemana && !podeVoltar(inicioSemana) ? "As escalas começam nesta semana" : undefined}
         >
           ◀ Anterior
         </button>
@@ -314,7 +316,7 @@ export default function EscalaDaSemana() {
           onClick={() => setDeslocamento(0)}
           disabled={!inicioSemana || ehSemanaAtual || sugerindo}
         >
-          Hoje
+          {hoje && antesDoInicio(hoje) ? "Início" : "Hoje"}
         </button>
         <button
           type="button"
