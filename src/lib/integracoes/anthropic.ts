@@ -77,6 +77,11 @@ function descreverRegras(regras: RegrasDaCasa): string {
   linhas.push(
     `FOLGAS: cada pessoa precisa ter pelo menos ${regras.folgasPorSemana} dias sem nenhum turno na semana (domingo a sábado). Dia com o restaurante FECHADO não conta como folga.`,
   );
+  if (regras.maxDiasSeguidos > 0) {
+    linhas.push(
+      `DIAS SEGUIDOS: ninguém pode trabalhar mais de ${regras.maxDiasSeguidos} dias seguidos sem folga. Conte também os dias do histórico antes e depois da semana. Dia com o restaurante fechado interrompe a sequência.`,
+    );
+  }
   if (regras.domingos.mulheresEmDomingosAlternados) {
     linhas.push(
       "DOMINGOS (sexo F): não pode trabalhar dois domingos seguidos. Veja o domingo anterior no histórico.",
@@ -233,7 +238,7 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     "ESCALA JÁ SALVA NESTA SEMANA:",
     quadrosDe(daSemana),
     "",
-    "HISTÓRICO FORA DA SEMANA (não mude; serve para as regras de domingo e de fecha e abre):",
+    "HISTÓRICO FORA DA SEMANA (não mude; serve para as regras de domingo, de fecha e abre e de dias seguidos):",
     quadrosDe(historico),
   ].join("\n");
 

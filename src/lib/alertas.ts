@@ -19,7 +19,8 @@ export type TipoAlerta =
   | "folga"
   | "domingo"
   | "folga-fixa"
-  | "turno-funcao";
+  | "turno-funcao"
+  | "dias-seguidos";
 
 export type Alerta = {
   tipo: TipoAlerta;
@@ -41,6 +42,7 @@ export const ROTULO_TIPO: Record<TipoAlerta, string> = {
   domingo: "Domingo",
   "folga-fixa": "Folga fixa",
   "turno-funcao": "Turno da função",
+  "dias-seguidos": "Dias seguidos",
 };
 
 export type ResultadoAlertas = {
@@ -90,7 +92,9 @@ const NOMES_MES = [
 ];
 
 /**
- * Período de datas que precisa ser carregado do banco para conferir a semana:
+ * Período de datas que precisa ser carregado do banco para conferir a semana
+ * (a semana, 7 dias antes e 7 depois, por causa da regra de dias seguidos,
+ * e todos os domingos do mês):
  * a semana (domingo a sábado), o sábado anterior, o domingo seguinte e todos os
  * domingos do mês do domingo desta semana.
  */
@@ -98,7 +102,7 @@ export function periodoParaConferir(inicioSemana: string): { inicio: string; fim
   const sabado = somarDias(inicioSemana, 6);
   const domingos = domingosDoMes(inicioSemana);
   const candidatosInicio = [somarDias(inicioSemana, -7), domingos[0]];
-  const candidatosFim = [somarDias(sabado, 1), domingos[domingos.length - 1]];
+  const candidatosFim = [somarDias(sabado, 7), domingos[domingos.length - 1]];
   return {
     inicio: candidatosInicio.sort()[0],
     fim: candidatosFim.sort()[candidatosFim.length - 1],
@@ -309,6 +313,42 @@ export function calcularAlertas(params: {
       celulas: [{ data: e.data, turnoId: turno.id }],
       funcionarioId: f.id,
     });
+  }
+
+  // 7. Dias seguidos de trabalho sem folga (atravessa a virada da semana).
+  // Dia fechado não tem escala, então interrompe a sequência sozinho.
+  if (regras.maxDiasSeguidos > 0) {
+    for (const f of ativos) {
+      const trabalhados = Array.from(diasDaPessoa.get(f.id) ?? []).sort();
+      let inicio = 0;
+      for (let i = 1; i <= trabalhados.length; i++) {
+        const continua = i < trabalhados.length && somarDias(trabalhados[i - 1], 1) === trabalhados[i];
+        if (continua) continue;
+        const sequencia = trabalhados.slice(inicio, i);
+        inicio = i;
+        if (sequencia.length <= regras.maxDiasSeguidos) continue;
+        // Só avisa se a sequência passa pela semana na tela.
+        if (!sequencia.some((d) => dias.includes(d))) continue;
+        const primeiro = sequencia[0];
+        const ultimo = sequencia[sequencia.length - 1];
+        // Quadros marcados: do dia que passou do limite em diante (dentro da semana).
+        const celulas = sequencia
+          .slice(regras.maxDiasSeguidos)
+          .filter((d) => dias.includes(d))
+          .flatMap((d) =>
+            turnos
+              .filter((t) => pessoasNoQuadro.get(chaveCelula(d, t.id))?.has(f.id))
+              .map((t) => ({ data: d, turnoId: t.id })),
+          );
+        alertas.push({
+          tipo: "dias-seguidos",
+          texto: `${f.nome} trabalha ${sequencia.length} dias seguidos (${rotuloDia(primeiro)} a ${rotuloDia(ultimo)}; máximo ${regras.maxDiasSeguidos})`,
+          curto: `${primeiroNome(f.nome)}: ${sequencia.length} dias seguidos`,
+          celulas,
+          funcionarioId: f.id,
+        });
+      }
+    }
   }
 
   // 6. Escalado num turno que não é da sua função (o banco já recusa; isto pega o que foi salvo antes).

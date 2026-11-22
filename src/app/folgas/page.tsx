@@ -34,6 +34,7 @@ import {
   diasDeFolga,
   normalizar,
   regraDoQuadro,
+  ROTULO_TIPO,
   type Alerta,
 } from "@/lib/alertas";
 import {
@@ -76,7 +77,8 @@ type Linha = {
   // Regra de folga fixa de domingo da pessoa (se tiver) e se ela vale neste domingo.
   regraFixa: FolgaDomingo | null;
   folgaFixaHoje: boolean;
-  avisosDomingo: string[];
+  // Avisos de regra da pessoa nesta semana (rótulo + frase sem o nome).
+  avisosDomingo: { rotulo: string; texto: string }[];
 };
 
 export default function Folgas() {
@@ -220,7 +222,9 @@ export default function Folgas() {
       diasFechados,
     });
 
-  // Alertas de domingo da Escala, por pessoa.
+  // Alertas da Escala de cada pessoa (domingo, folga fixa, dias seguidos...).
+  // O de "folga" não entra aqui: o cartão já mostra quantas folgas faltam.
+  const TIPOS_DO_CARTAO = new Set(["domingo", "folga-fixa", "dias-seguidos", "turno-funcao", "fechar-abrir"]);
   const avisosDomingoPorPessoa = new Map<string, Alerta[]>();
   let semSexo: Funcionario[] = [];
   let alertasAtuais: Alerta[] = [];
@@ -229,7 +233,7 @@ export default function Folgas() {
     alertasAtuais = resultado.alertas;
     semSexo = resultado.semSexo;
     for (const a of resultado.alertas) {
-      if ((a.tipo !== "domingo" && a.tipo !== "folga-fixa") || !a.funcionarioId) continue;
+      if (!TIPOS_DO_CARTAO.has(a.tipo) || !a.funcionarioId) continue;
       avisosDomingoPorPessoa.set(a.funcionarioId, [
         ...(avisosDomingoPorPessoa.get(a.funcionarioId) ?? []),
         a,
@@ -264,9 +268,10 @@ export default function Folgas() {
         folgaNoDomingo: folgas.includes(domingo),
         regraFixa,
         folgaFixaHoje: Boolean(regraFixa && domingo && regraDaFolga(regraFixa, domingo)),
-        avisosDomingo: (avisosDomingoPorPessoa.get(f.id) ?? []).map((a) =>
-          a.texto.replace(f.nome, "").trim(),
-        ),
+        avisosDomingo: (avisosDomingoPorPessoa.get(f.id) ?? []).map((a) => ({
+          rotulo: ROTULO_TIPO[a.tipo],
+          texto: a.texto.replace(f.nome, "").trim(),
+        })),
       };
     })
     .sort((a, b) => {
@@ -495,9 +500,9 @@ function CartaoFolgas({
         {regraFixa && (
           <p className="text-neutral-600">Folga fixa: {descreverFolgaFixa(regraFixa)}</p>
         )}
-        {avisosDomingo.map((texto) => (
-          <p key={texto} className="font-semibold text-red-800">
-            ⚠ Domingo: {texto}
+        {avisosDomingo.map((a) => (
+          <p key={a.texto} className="font-semibold text-red-800">
+            ⚠ {a.rotulo}: {a.texto}
           </p>
         ))}
         {semSexo && (

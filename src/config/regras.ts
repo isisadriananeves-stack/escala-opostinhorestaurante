@@ -29,6 +29,9 @@ export type RegrasDaCasa = {
   minimos: RegraDeMinimo[];
   // Dias sem nenhum turno na semana (domingo a sábado).
   folgasPorSemana: number;
+  // Máximo de dias seguidos de trabalho sem folga (atravessa a virada da semana).
+  // Dia com o restaurante fechado interrompe a sequência (a pessoa não trabalhou).
+  maxDiasSeguidos: number;
   domingos: {
     // Mulheres: não podem trabalhar dois domingos seguidos.
     mulheresEmDomingosAlternados: boolean;
@@ -97,6 +100,7 @@ export const REGRAS: RegrasDaCasa = {
     },
   ],
   folgasPorSemana: 2,
+  maxDiasSeguidos: 5,
   domingos: {
     mulheresEmDomingosAlternados: true,
     homensDomingosDeFolgaPorMes: 1,
