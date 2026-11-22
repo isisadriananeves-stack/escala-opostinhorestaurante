@@ -27,31 +27,17 @@ import {
   calcularAlertas,
   chaveCelula,
   conferirMinimo,
-  periodoParaConferir,
   regraDoQuadro,
   ROTULO_TIPO,
   type Alerta,
   type ResultadoAlertas,
 } from "@/lib/alertas";
 import { descreverFolgaFixa, folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
+import { buscarEscalas, escalar, tirarDaEscala } from "@/lib/escalas";
 
 // Célula aberta para escolher quem trabalha.
 type CelulaAberta = { data: string; turno: Turno };
 
-const CAMPOS_ESCALA = "id, data, turno_id, funcionario_id";
-
-// Carrega a semana e os dias ao redor que as regras precisam
-// (domingo e sábado anteriores, domingo seguinte e os domingos do mês).
-async function buscarEscalas(inicioSemana: string): Promise<Escala[]> {
-  const { inicio, fim } = periodoParaConferir(inicioSemana);
-  const { data, error } = await supabase()
-    .from("escalas")
-    .select(CAMPOS_ESCALA)
-    .gte("data", inicio)
-    .lte("data", fim);
-  if (error) throw error;
-  return data ?? [];
-}
 
 // Pede à IA (pela rota do servidor) uma sugestão para a semana. Não salva nada.
 async function pedirSugestao(inicioSemana: string): Promise<RespostaSugestao> {
@@ -195,16 +181,10 @@ export default function EscalaDaSemana() {
     setErro(null);
     try {
       if (existente) {
-        const { error } = await supabase().from("escalas").delete().eq("id", existente.id);
-        if (error) throw error;
+        await tirarDaEscala([existente.id]);
         setEscalas((lista) => lista.filter((e) => e.id !== existente.id));
       } else {
-        const { data: nova, error } = await supabase()
-          .from("escalas")
-          .insert({ data, turno_id: turnoId, funcionario_id: f.id })
-          .select(CAMPOS_ESCALA)
-          .single();
-        if (error) throw error;
+        const nova = await escalar(f.id, data, turnoId);
         setEscalas((lista) => [...lista, nova]);
       }
     } catch (e) {
