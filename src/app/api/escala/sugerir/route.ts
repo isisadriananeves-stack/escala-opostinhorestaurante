@@ -58,9 +58,11 @@ export async function POST(request: Request) {
   let escalas: Escala[];
   let folgasFixas: FolgaDomingo[];
   let diasFechados: DiaFechado[];
+  let escalasModelo: Escala[];
   try {
     const { inicio, fim } = periodoParaConferir(inicioSemana);
-    const [t, f, e, fx, df] = await Promise.all([
+    const modelo = REGRAS.semanasModelo;
+    const [t, f, e, fx, df, m] = await Promise.all([
       login.db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
       login.db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).eq("ativo", true).order("funcao").order("nome"),
       login.db
@@ -70,6 +72,12 @@ export async function POST(request: Request) {
         .lte("data", fim),
       login.db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
       login.db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
+      // Semanas modelo (montadas à mão): turno de cada pessoa e costumes.
+      login.db
+        .from("escalas")
+        .select("id, data, turno_id, funcionario_id")
+        .gte("data", modelo.inicio)
+        .lte("data", modelo.fim),
     ]);
     if (t.error) throw t.error;
     if (f.error) throw f.error;
@@ -78,6 +86,8 @@ export async function POST(request: Request) {
     folgasFixas = fx.data ?? [];
     if (df.error) throw df.error;
     diasFechados = df.data ?? [];
+    if (m.error) throw m.error;
+    escalasModelo = m.data ?? [];
     turnos = t.data ?? [];
     funcionarios = f.data ?? [];
     escalas = e.data ?? [];
@@ -104,6 +114,7 @@ export async function POST(request: Request) {
       escalas,
       folgasFixas,
       diasFechados,
+      escalasModelo,
     });
     return Response.json(sugestao satisfies RespostaSugestao);
   } catch (e) {

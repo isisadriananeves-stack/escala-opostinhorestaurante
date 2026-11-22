@@ -29,6 +29,10 @@ export type RegrasDaCasa = {
   // Primeiro dia com escala no sistema (um domingo, "AAAA-MM-DD"). As telas não
   // mostram semanas antes dele, e a Conferência não cobra escala antes dele.
   inicioDasEscalas: string;
+  // Semanas montadas à mão que servem de modelo para a sugestão com IA:
+  // cada pessoa só é sugerida nos turnos em que trabalhou nelas, e a IA tenta
+  // repetir os costumes (dias de folga, quem trabalha junto).
+  semanasModelo: { inicio: string; fim: string };
   minimos: RegraDeMinimo[];
   // Dias sem nenhum turno na semana (domingo a sábado).
   folgasPorSemana: number;
@@ -58,6 +62,7 @@ export type RegrasDaCasa = {
 
 export const REGRAS: RegrasDaCasa = {
   inicioDasEscalas: "2026-12-13",
+  semanasModelo: { inicio: "2026-12-13", fim: "2027-01-02" },
   minimos: [
     {
       turno: "Jantar",

@@ -20,6 +20,12 @@ import type {
 } from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { podeTrabalharNoTurno } from "@/lib/turnos";
+import {
+  costumesDoModelo,
+  nomesDosDias as diasDeCostume,
+  respeitarTurnosDoModelo,
+  turnosDoModelo,
+} from "@/lib/modelo";
 import { DIAS_SEMANA, diaMes, diasDaSemana, horaCurta, paraData } from "@/lib/datas";
 
 /** Erro com mensagem em português, segura para mostrar na tela (sem segredos). */
@@ -39,6 +45,8 @@ export type PedidoSugestao = {
   folgasFixas: FolgaDomingo[];
   // Dias com o restaurante fechado: ninguém trabalha e não contam como folga.
   diasFechados: DiaFechado[];
+  // Escalas das semanas modelo (REGRAS.semanasModelo), montadas à mão.
+  escalasModelo: Escala[];
 };
 
 export type SugestaoIA = {
@@ -131,6 +139,9 @@ Responda sempre em português do Brasil.
 Como trabalhar:
 - Cumpra todas as regras da casa. Os mínimos são o mais importante; depois folgas, domingos e "fecha e abre".
 - Só escale uma pessoa em turno da função dela.
+- TURNO FIXO (obrigatório): cada pessoa que aparece em "SEMANAS MODELO" só pode ser escalada nos turnos listados para ela. Nunca mude o turno de ninguém. Se faltar gente num turno, não puxe pessoa de outro turno: deixe faltando e explique em "observacoes".
+- Costumes (quando der): imite as semanas modelo. Tente repetir os dias em que cada pessoa costuma folgar e quem costuma trabalhar junto. As regras da casa valem mais que os costumes; quando precisar fugir do costume, explique em "observacoes" (ex.: "P4 folgou na quarta e não na segunda, para não passar de 5 dias seguidos.").
+- Pessoa que não aparece nas semanas modelo pode ser escalada em qualquer turno da função dela; se usar, avise em "observacoes".
 - Parta da escala já salva desta semana: mantenha o que já está marcado sempre que não quebrar uma regra, e mexa o mínimo possível.
 - Não exagere: escale o mínimo pedido em cada função e só coloque gente a mais quando não houver outro jeito. Distribua os turnos de forma justa entre as pessoas da mesma função.
 - Turno sem regra de mínimo naquele dia pode ficar vazio, a não ser que já tenha gente marcada.
@@ -144,7 +155,16 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     throw new ErroIA("A variável ANTHROPIC_API_KEY não está configurada na Vercel.");
   }
 
-  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas, diasFechados } = pedido;
+  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas, diasFechados, escalasModelo } =
+    pedido;
+  const modelo = regras.semanasModelo;
+  const turnosPorPessoa = turnosDoModelo(escalasModelo);
+  const costumes = costumesDoModelo(
+    escalasModelo,
+    modelo.inicio,
+    modelo.fim,
+    new Set(diasFechados.map((d) => d.data)),
+  );
   const motivoFechado = new Map(diasFechados.map((d) => [d.data, d.motivo]));
   const dias = diasDaSemana(inicioSemana);
   const diasSet = new Set(dias);
@@ -234,6 +254,33 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
       );
       return linhas.length > 0 ? linhas.join("\n") : "(ninguém nesta semana)";
     })(),
+    "",
+    `SEMANAS MODELO (montadas à mão, de ${diaMes(modelo.inicio)} a ${diaMes(modelo.fim)}): turno de cada pessoa (obrigatório) e costumes:`,
+    ...funcionarios.map((f) => {
+      const codigo = codigoPessoa.get(f.id);
+      const permitidos = turnosPorPessoa.get(f.id);
+      if (!permitidos) {
+        return `- ${codigo} (${f.funcao}): não está nas semanas modelo (qualquer turno da função; avise se usar)`;
+      }
+      const nomesTurnos = turnos.filter((t) => permitidos.has(t.id)).map((t) => t.nome);
+      const costume = costumes.get(f.id);
+      const partes = [`turnos: ${nomesTurnos.join(" e ")}`];
+      if (costume && costume.diasDeFolga.length > 0) {
+        partes.push(`costuma folgar: ${diasDeCostume(costume.diasDeFolga)}`);
+      }
+      const colegas = (costume?.junto ?? []).map((id) => codigoPessoa.get(id)).filter(Boolean);
+      if (colegas.length > 0) partes.push(`costuma trabalhar com: ${colegas.join(", ")}`);
+      return `- ${codigo} (${f.funcao}): ${partes.join(" · ")}`;
+    }),
+    "",
+    "ESCALA DAS SEMANAS MODELO (para imitar; não mude):",
+    quadrosDe(
+      [...escalasModelo].sort(
+        (a, b) =>
+          a.data.localeCompare(b.data) ||
+          (ordemTurno.get(a.turno_id) ?? 0) - (ordemTurno.get(b.turno_id) ?? 0),
+      ),
+    ),
     "",
     "ESCALA JÁ SALVA NESTA SEMANA:",
     quadrosDe(daSemana),
@@ -333,10 +380,23 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     }
   }
 
+  // Turno fixo: tira quem a IA pôs fora dos turnos do modelo (o que já estava salvo fica).
+  const { mantidas, tiradas } = respeitarTurnosDoModelo(
+    saida,
+    turnosPorPessoa,
+    escalas.filter((e) => diasSet.has(e.data)),
+  );
+
   const observacoes = (Array.isArray(lida.observacoes) ? lida.observacoes : [])
     .filter((o): o is string => typeof o === "string" && o.trim() !== "")
     // "P3" vira o primeiro nome da pessoa.
     .map((o) => o.trim().replace(/\bP\d+\b/g, (codigo) => nomePorCodigo.get(codigo) ?? codigo));
+  for (const t of tiradas) {
+    const nome = nomePorCodigo.get(codigoPessoa.get(t.funcionario_id) ?? "") ?? "Alguém";
+    observacoes.push(
+      `${nome} foi tirado(a) do ${codigoTurno.get(t.turno_id)} de ${nomeDoDia(t.data).replace(/ \(.*\)$/, "")}: não é o turno dele(a) nas semanas modelo.`,
+    );
+  }
 
-  return { escalas: saida, observacoes };
+  return { escalas: mantidas, observacoes };
 }
