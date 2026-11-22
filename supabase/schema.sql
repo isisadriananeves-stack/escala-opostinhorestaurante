@@ -156,7 +156,7 @@ end $$;
 
 -- ---------------------------------------------------------------------
 -- Folgas fixas de domingo (uma regra por pessoa)
---   tipo 'domingos_do_mes': folga nos domingos do mês indicados (1º a 5º), todo mês.
+--   tipo 'domingos_do_mes': folga nos domingos do mês indicados (1º a 5º; -1 = último), todo mês.
 --   tipo 'quinzenal': folga domingo sim, domingo não, a partir do domingo "inicio".
 -- O site confere a mesma conta em src/lib/folgas-domingo.ts.
 -- ---------------------------------------------------------------------
@@ -169,7 +169,7 @@ create table if not exists folgas_domingo (
   criado_em timestamptz not null default now(),
   constraint folgas_domingo_regra_valida check (
     (tipo = 'domingos_do_mes' and inicio is null and domingos_do_mes is not null
-      and cardinality(domingos_do_mes) between 1 and 5 and domingos_do_mes <@ array[1, 2, 3, 4, 5])
+      and cardinality(domingos_do_mes) between 1 and 6 and domingos_do_mes <@ array[-1, 1, 2, 3, 4, 5])
     or
     (tipo = 'quinzenal' and domingos_do_mes is null and inicio is not null
       and extract(dow from inicio) = 0)
@@ -188,7 +188,10 @@ language sql stable security definer set search_path = public as $$
     where f.funcionario_id = funcionario
       and (
         (f.tipo = 'domingos_do_mes'
-          and ((extract(day from dia)::int - 1) / 7 + 1) = any (f.domingos_do_mes))
+          and (((extract(day from dia)::int - 1) / 7 + 1) = any (f.domingos_do_mes)
+            -- -1 = último domingo do mês (uma semana depois já é outro mês)
+            or (-1 = any (f.domingos_do_mes)
+                and extract(month from dia + 7) <> extract(month from dia))))
         or
         (f.tipo = 'quinzenal' and dia >= f.inicio and (dia - f.inicio) % 14 = 0)
       )

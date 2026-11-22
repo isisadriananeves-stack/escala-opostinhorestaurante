@@ -130,7 +130,7 @@ export type ResumoAdmissoes = {
 };
 
 // Folga fixa de domingo de uma pessoa (tabela folgas_domingo).
-//   "domingos_do_mes": folga nos domingos do mês indicados (1 a 5), todo mês.
+//   "domingos_do_mes": folga nos domingos do mês indicados (1 a 5; -1 = último), todo mês.
 //   "quinzenal": domingo sim, domingo não, a partir do domingo "inicio" (AAAA-MM-DD).
 export type FolgaDomingo = {
   id: string;

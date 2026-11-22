@@ -17,11 +17,24 @@ export function ordemDoDomingo(dia: string): number {
   return Math.floor((paraData(dia).getDate() - 1) / 7) + 1;
 }
 
+/** Código de "último domingo do mês" em domingos_do_mes (o 4º ou o 5º, conforme o mês). */
+export const ULTIMO_DOMINGO = -1;
+
+/** É o último domingo do mês? (uma semana depois já é outro mês) */
+export function ehUltimoDomingo(dia: string): boolean {
+  const d = paraData(dia);
+  const semanaQueVem = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
+  return semanaQueVem.getMonth() !== d.getMonth();
+}
+
 /** A regra dá folga nesse dia? (só domingos contam) */
 export function regraDaFolga(regra: FolgaDomingo, dia: string): boolean {
   if (paraData(dia).getDay() !== 0) return false;
   if (regra.tipo === "domingos_do_mes") {
-    return (regra.domingos_do_mes ?? []).includes(ordemDoDomingo(dia));
+    const lista = regra.domingos_do_mes ?? [];
+    return (
+      lista.includes(ordemDoDomingo(dia)) || (lista.includes(ULTIMO_DOMINGO) && ehUltimoDomingo(dia))
+    );
   }
   if (!regra.inicio || dia < regra.inicio) return false;
   return diasEntre(regra.inicio, dia) % 14 === 0;
@@ -42,13 +55,18 @@ export function temFolgaFixa(
   return regra ? regraDaFolga(regra, dia) : false;
 }
 
-/** "1º e 3º domingo do mês" ou "domingo sim, domingo não (desde 22/11/2026)". */
+/** "1º e 3º domingo do mês", "último domingo do mês" ou "domingo sim, domingo não (desde 22/11/2026)". */
 export function descreverFolgaFixa(regra: FolgaDomingo): string {
   if (regra.tipo === "domingos_do_mes") {
-    const ordens = [...(regra.domingos_do_mes ?? [])].sort().map((n) => `${n}º`);
-    const lista =
+    const lista = regra.domingos_do_mes ?? [];
+    const ordens = lista
+      .filter((n) => n !== ULTIMO_DOMINGO)
+      .sort((a, b) => a - b)
+      .map((n) => `${n}º`);
+    if (lista.includes(ULTIMO_DOMINGO)) ordens.push("último");
+    const texto =
       ordens.length <= 1 ? ordens.join("") : `${ordens.slice(0, -1).join(", ")} e ${ordens.at(-1)}`;
-    return `${lista} domingo do mês`;
+    return `${texto} domingo do mês`;
   }
   const inicio = regra.inicio ?? "";
   return `domingo sim, domingo não (desde ${diaMes(inicio)}/${inicio.slice(0, 4)})`;
