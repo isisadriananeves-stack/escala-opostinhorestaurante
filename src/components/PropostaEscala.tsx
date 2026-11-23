@@ -10,6 +10,7 @@ import { diaMes, diasDaSemana, horaCurta, rotuloDia, somarDias } from "@/lib/dat
 import type {
   DiaFechado,
   Escala,
+  Ferias,
   FolgaDomingo,
   EscalaSugerida,
   FuncionarioEscala as Funcionario,
@@ -48,6 +49,7 @@ export function PropostaEscala({
   escalasAtuais,
   folgasFixas,
   diasFechados,
+  ferias,
   salvando,
   erro,
   onAprovar,
@@ -61,6 +63,7 @@ export function PropostaEscala({
   escalasAtuais: Escala[];
   folgasFixas: FolgaDomingo[];
   diasFechados: DiaFechado[];
+  ferias: Ferias[];
   salvando: boolean;
   erro: string | null;
   onAprovar: () => void;
@@ -85,6 +88,7 @@ export function PropostaEscala({
     escalas: simuladas,
     folgasFixas,
     diasFechados,
+    ferias,
   });
 
   const chavesEntram = new Set(entram.map(chaveLugar));

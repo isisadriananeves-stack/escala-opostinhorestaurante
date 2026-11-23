@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
-import { hojeISO } from "@/lib/datas";
+import { diaMes, hojeISO } from "@/lib/datas";
 import {
+  CAMPOS_FERIAS,
   CAMPOS_FUNCIONARIO_EQUIPE,
   CAMPOS_TURNO,
   FUNCOES_PADRAO,
   type FuncionarioEquipe as Funcionario,
+  type Ferias,
   type ResumoAdmissoes,
   type Turno,
 } from "@/lib/tipos";
+import { descreverFerias, feriasAtuaisOuProximas } from "@/lib/ferias";
 import { podeTrabalharNoTurno } from "@/lib/turnos";
 import { AvisoErro, AvisoSemVariaveis, mensagemDeErro } from "@/components/AvisoBanco";
 import {
@@ -112,6 +115,9 @@ export default function Equipe() {
   const semVariaveis = !variaveisConfiguradas();
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [turnos, setTurnos] = useState<Turno[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
+  // Pessoa com a janela de férias aberta.
+  const [feriasDe, setFeriasDe] = useState<Funcionario | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [formulario, setFormulario] = useState<Formulario | null>(null);
@@ -138,11 +144,14 @@ export default function Equipe() {
     Promise.all([
       buscarFuncionarios(),
       supabase().from("turnos").select(CAMPOS_TURNO).order("ordem"),
+      supabase().from("ferias").select(CAMPOS_FERIAS).order("inicio"),
     ])
-      .then(([lista, t]) => {
+      .then(([lista, t, fe]) => {
         if (t.error) throw t.error;
+        if (fe.error) throw fe.error;
         setFuncionarios(lista);
         setTurnos(t.data ?? []);
+        setFerias(fe.data ?? []);
       })
       .catch((e) => setErro(mensagemDeErro(e)))
       .finally(() => setCarregando(false));
@@ -489,6 +498,21 @@ export default function Equipe() {
         </section>
       )}
 
+      {feriasDe && (
+        <JanelaFerias
+          pessoa={feriasDe}
+          lista={ferias.filter((x) => x.funcionario_id === feriasDe.id)}
+          onMudou={async () => {
+            const { data, error } = await supabase()
+              .from("ferias")
+              .select(CAMPOS_FERIAS)
+              .order("inicio");
+            if (!error) setFerias(data ?? []);
+          }}
+          onFechar={() => setFeriasDe(null)}
+        />
+      )}
+
       {carregando ? (
         <p className="text-neutral-600">Carregando equipe...</p>
       ) : (
@@ -501,7 +525,11 @@ export default function Equipe() {
           <ul className="space-y-3">
             {ativos.map((f) => (
               <li key={f.id} className="cartao">
-                <CartaoFuncionario funcionario={f} turnos={turnos} />
+                <CartaoFuncionario
+                  funcionario={f}
+                  turnos={turnos}
+                  ferias={ferias.filter((x) => x.funcionario_id === f.id)}
+                />
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -516,6 +544,13 @@ export default function Equipe() {
                     onClick={() => mudarAtivo(f, false)}
                   >
                     Desativar
+                  </button>
+                  <button
+                    type="button"
+                    className="botao-secundario col-span-2"
+                    onClick={() => setFeriasDe(f)}
+                  >
+                    Férias
                   </button>
                 </div>
               </li>
@@ -558,8 +593,17 @@ export default function Equipe() {
   );
 }
 
-function CartaoFuncionario({ funcionario, turnos }: { funcionario: Funcionario; turnos: Turno[] }) {
+function CartaoFuncionario({
+  funcionario,
+  turnos,
+  ferias = [],
+}: {
+  funcionario: Funcionario;
+  turnos: Turno[];
+  ferias?: Ferias[];
+}) {
   const turnoPadrao = turnos.find((t) => t.id === funcionario.turno_padrao);
+  const proximas = feriasAtuaisOuProximas(ferias, hojeISO());
   return (
     <div>
       <p className="text-lg font-semibold">{funcionario.nome}</p>
@@ -584,6 +628,11 @@ function CartaoFuncionario({ funcionario, turnos }: { funcionario: Funcionario; 
           <span className="text-amber-700"> · data de entrada não informada</span>
         )}
       </p>
+      {proximas && (
+        <p className="text-sm font-semibold text-sky-800">
+          {proximas.inicio <= hojeISO() ? "De férias" : "Férias marcadas"} {descreverFerias(proximas)}
+        </p>
+      )}
       {funcionario.telefone ? (
         <a
           href={`tel:${funcionario.telefone.replace(/[^\d+]/g, "")}`}
@@ -605,5 +654,204 @@ function AvisoCampo({ texto }: { texto?: string }) {
     <span className="mt-1 block text-sm font-medium text-red-700" role="alert">
       {texto}
     </span>
+  );
+}
+
+/** Janela para marcar e apagar as férias de uma pessoa. */
+function JanelaFerias({
+  pessoa,
+  lista,
+  onMudou,
+  onFechar,
+}: {
+  pessoa: Funcionario;
+  lista: Ferias[];
+  onMudou: () => Promise<void>;
+  onFechar: () => void;
+}) {
+  const [inicio, setInicio] = useState("");
+  const [fim, setFim] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const primeiroNome = pessoa.nome.split(/\s+/)[0];
+  const hoje = hojeISO();
+  const ordenadas = [...lista].sort((a, b) => b.inicio.localeCompare(a.inicio));
+
+  useEffect(() => {
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === "Escape") onFechar();
+    }
+    window.addEventListener("keydown", aoTeclar);
+    const overflowAntigo = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", aoTeclar);
+      document.body.style.overflow = overflowAntigo;
+    };
+  }, [onFechar]);
+
+  async function salvar(evento: React.FormEvent) {
+    evento.preventDefault();
+    setAviso(null);
+    if (!inicio || !fim) return setAviso({ ok: false, texto: "Preencha o primeiro e o último dia." });
+    if (fim < inicio) return setAviso({ ok: false, texto: "O último dia vem antes do primeiro." });
+    const dias = Math.round((Date.parse(fim) - Date.parse(inicio)) / 86_400_000);
+    if (dias > 60) return setAviso({ ok: false, texto: "Período longo demais (máximo de 61 dias)." });
+    if (lista.some((f) => f.inicio <= fim && inicio <= f.fim)) {
+      return setAviso({ ok: false, texto: "Já existem férias marcadas nesse período." });
+    }
+    setSalvando(true);
+    try {
+      const db = supabase();
+      // Escalas já salvas nesse período: pergunta se tira.
+      const { data: noPeriodo, error: erroBusca } = await db
+        .from("escalas")
+        .select("id")
+        .eq("funcionario_id", pessoa.id)
+        .gte("data", inicio)
+        .lte("data", fim);
+      if (erroBusca) throw erroBusca;
+      const ids = (noPeriodo ?? []).map((e: { id: string }) => e.id);
+      let tirou = 0;
+      if (
+        ids.length > 0 &&
+        window.confirm(
+          `${primeiroNome} está escalado(a) em ${ids.length} ${ids.length === 1 ? "turno" : "turnos"} desse período. Tirar da escala?`,
+        )
+      ) {
+        const { error } = await db.from("escalas").delete().in("id", ids);
+        if (error) throw error;
+        tirou = ids.length;
+      }
+      const { error } = await db.from("ferias").insert({ funcionario_id: pessoa.id, inicio, fim });
+      if (error) throw error;
+      await onMudou();
+      setInicio("");
+      setFim("");
+      setAviso({
+        ok: true,
+        texto:
+          `Férias marcadas de ${diaMes(inicio)} a ${diaMes(fim)}.` +
+          (tirou > 0 ? ` ${tirou} ${tirou === 1 ? "turno saiu" : "turnos saíram"} da escala.` : "") +
+          (ids.length > tirou ? " Os turnos que ficaram aparecem com alerta na Escala." : ""),
+      });
+    } catch (e) {
+      setAviso({ ok: false, texto: `Não foi possível salvar. Detalhe: ${mensagemDeErro(e)}` });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function apagar(f: Ferias) {
+    if (!window.confirm(`Apagar as férias ${descreverFerias(f)} de ${primeiroNome}?`)) return;
+    setSalvando(true);
+    setAviso(null);
+    try {
+      const { error } = await supabase().from("ferias").delete().eq("id", f.id);
+      if (error) throw error;
+      await onMudou();
+      setAviso({ ok: true, texto: `Férias ${descreverFerias(f)} apagadas.` });
+    } catch (e) {
+      setAviso({ ok: false, texto: `Não foi possível apagar. Detalhe: ${mensagemDeErro(e)}` });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-end justify-center bg-black/40 sm:items-center"
+      onClick={onFechar}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Férias de ${pessoa.nome}`}
+        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-lg sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-neutral-200 p-4">
+          <p className="titulo text-xl" style={{ color: "var(--cor-principal)" }}>
+            Férias · {primeiroNome}
+          </p>
+          <p className="text-sm text-neutral-600">
+            Nesses dias a pessoa não pode ser escalada. As folgas fixas de domingo não mudam.
+          </p>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <form onSubmit={salvar} noValidate className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block font-medium">Primeiro dia</span>
+                <input
+                  className="campo"
+                  type="date"
+                  value={inicio}
+                  onChange={(e) => setInicio(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block font-medium">Último dia</span>
+                <input
+                  className="campo"
+                  type="date"
+                  value={fim}
+                  min={inicio || undefined}
+                  onChange={(e) => setFim(e.target.value)}
+                />
+              </label>
+            </div>
+            <button type="submit" className="botao w-full" disabled={salvando}>
+              {salvando ? "Salvando..." : "Marcar férias"}
+            </button>
+          </form>
+
+          {aviso && (
+            <p
+              className={`text-sm font-semibold ${aviso.ok ? "text-green-800" : "text-red-700"}`}
+              role={aviso.ok ? "status" : "alert"}
+            >
+              {aviso.texto}
+            </p>
+          )}
+
+          <div className="space-y-2">
+            <p className="font-medium">Férias marcadas</p>
+            {ordenadas.length === 0 ? (
+              <p className="text-sm text-neutral-600">Nenhuma.</p>
+            ) : (
+              <ul className="space-y-2">
+                {ordenadas.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 p-3"
+                  >
+                    <span>
+                      {descreverFerias(f)}
+                      {f.fim < hoje && <span className="text-sm text-neutral-500"> (já passou)</span>}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-red-700 underline"
+                      disabled={salvando}
+                      onClick={() => apagar(f)}
+                    >
+                      Apagar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-neutral-200 p-4">
+          <button type="button" className="botao w-full" onClick={onFechar}>
+            Pronto
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -5,12 +5,14 @@ import type { RegrasDaCasa, RegraDeMinimo } from "@/config/regras";
 import type {
   DiaFechado,
   Escala,
+  Ferias,
   FolgaDomingo,
   FuncionarioEscala as Funcionario,
   Turno,
 } from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
+import { deFerias, feriasPorPessoa } from "@/lib/ferias";
 import { diaMes, diasDaSemana, paraData, rotuloDia, somarDias } from "@/lib/datas";
 
 export type TipoAlerta =
@@ -20,7 +22,8 @@ export type TipoAlerta =
   | "domingo"
   | "folga-fixa"
   | "turno-funcao"
-  | "dias-seguidos";
+  | "dias-seguidos"
+  | "ferias";
 
 export type Alerta = {
   tipo: TipoAlerta;
@@ -43,6 +46,7 @@ export const ROTULO_TIPO: Record<TipoAlerta, string> = {
   "folga-fixa": "Folga fixa",
   "turno-funcao": "Turno da função",
   "dias-seguidos": "Dias seguidos",
+  ferias: "Férias",
 };
 
 export type ResultadoAlertas = {
@@ -158,6 +162,8 @@ export function calcularAlertas(params: {
   folgasFixas?: FolgaDomingo[];
   // Dias com o restaurante fechado (tabela dias_fechados).
   diasFechados?: DiaFechado[];
+  // Férias (tabela ferias).
+  ferias?: Ferias[];
 }): ResultadoAlertas {
   const {
     regras,
@@ -167,7 +173,9 @@ export function calcularAlertas(params: {
     escalas,
     folgasFixas = [],
     diasFechados = [],
+    ferias = [],
   } = params;
+  const mapaFerias = feriasPorPessoa(ferias);
   const fechados = new Set(diasFechados.map((d) => d.data));
   const dias = diasDaSemana(inicioSemana);
   // A semana começa no domingo: ele é o primeiro dia.
@@ -243,6 +251,8 @@ export function calcularAlertas(params: {
   // 3. Folgas na semana (dias sem nenhum turno).
   const ativos = funcionarios.filter((f) => f.ativo);
   for (const f of ativos) {
+    // Semana com férias: não cobra o mínimo de folgas (a pessoa acabou de descansar).
+    if (dias.some((d) => deFerias(mapaFerias, f.id, d))) continue;
     const folgas = diasDeFolga(dias, diasDaPessoa.get(f.id), fechados).length;
     if (folgas < regras.folgasPorSemana) {
       alertas.push({
@@ -310,6 +320,21 @@ export function calcularAlertas(params: {
       tipo: "folga-fixa",
       texto: `${f.nome} está no ${turno.nome} ${rotuloDia(e.data)}, que é folga fixa dele(a)`,
       curto: `${primeiroNome(f.nome)}: folga fixa`,
+      celulas: [{ data: e.data, turnoId: turno.id }],
+      funcionarioId: f.id,
+    });
+  }
+
+  // 8. Escalado em dia de férias (o banco já recusa; isto pega o que foi salvo antes).
+  for (const e of escalas) {
+    if (!dias.includes(e.data) || !deFerias(mapaFerias, e.funcionario_id, e.data)) continue;
+    const f = porId.get(e.funcionario_id);
+    const turno = turnoPorId.get(e.turno_id);
+    if (!f || !turno) continue;
+    alertas.push({
+      tipo: "ferias",
+      texto: `${f.nome} está no ${turno.nome} ${rotuloDia(e.data)}, mas está de férias`,
+      curto: `${primeiroNome(f.nome)}: de férias`,
       celulas: [{ data: e.data, turnoId: turno.id }],
       funcionarioId: f.id,
     });

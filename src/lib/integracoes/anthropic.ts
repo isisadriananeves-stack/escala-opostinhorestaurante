@@ -13,6 +13,7 @@ import type { RegrasDaCasa } from "@/config/regras";
 import type {
   DiaFechado,
   Escala,
+  Ferias,
   EscalaSugerida,
   FolgaDomingo,
   FuncionarioEscala,
@@ -20,6 +21,7 @@ import type {
 } from "@/lib/tipos";
 import { folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { podeTrabalharNoTurno } from "@/lib/turnos";
+import { deFerias, descreverFerias, feriasPorPessoa } from "@/lib/ferias";
 import {
   costumesDoModelo,
   nomesDosDias as diasDeCostume,
@@ -47,6 +49,8 @@ export type PedidoSugestao = {
   diasFechados: DiaFechado[];
   // Escalas das semanas modelo (REGRAS.semanasModelo), montadas à mão.
   escalasModelo: Escala[];
+  // Férias: nesses dias a pessoa não pode ser escalada.
+  ferias: Ferias[];
 };
 
 export type SugestaoIA = {
@@ -155,8 +159,18 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     throw new ErroIA("A variável ANTHROPIC_API_KEY não está configurada na Vercel.");
   }
 
-  const { regras, inicioSemana, turnos, funcionarios, escalas, folgasFixas, diasFechados, escalasModelo } =
-    pedido;
+  const {
+    regras,
+    inicioSemana,
+    turnos,
+    funcionarios,
+    escalas,
+    folgasFixas,
+    diasFechados,
+    escalasModelo,
+    ferias,
+  } = pedido;
+  const mapaFerias = feriasPorPessoa(ferias);
   const modelo = regras.semanasModelo;
   const turnosPorPessoa = turnosDoModelo(escalasModelo);
   const costumes = costumesDoModelo(
@@ -243,6 +257,16 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
         .filter((dia) => motivoFechado.has(dia))
         .map((dia) => `- ${nomeDoDia(dia)}: ${motivoFechado.get(dia)}`);
       return linhas.length > 0 ? linhas.join("\n") : "(nenhum dia nesta semana)";
+    })(),
+    "",
+    "FÉRIAS (proibido escalar a pessoa nesses dias; na semana com férias a pessoa não precisa do mínimo de folgas):",
+    (() => {
+      const linhas = funcionarios.flatMap((f) =>
+        (mapaFerias.get(f.id) ?? [])
+          .filter((x) => x.inicio <= dias[6] && dias[0] <= x.fim)
+          .map((x) => `- ${codigoPessoa.get(f.id)}: ${descreverFerias(x)}`),
+      );
+      return linhas.length > 0 ? linhas.join("\n") : "(ninguém de férias nesta semana)";
     })(),
     "",
     "FOLGA FIXA NO DOMINGO (proibido escalar a pessoa nesse dia, em qualquer turno):",
@@ -367,8 +391,9 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
     for (const codigo of q.pessoas) {
       const funcionarioId = idPorCodigoPessoa.get(codigo);
       if (!funcionarioId) continue;
-      // Folga fixa no domingo: tira, mesmo que a IA tenha escalado.
+      // Folga fixa no domingo ou férias: tira, mesmo que a IA tenha escalado.
       if (temFolgaFixa(mapaFolgas, funcionarioId, q.data)) continue;
+      if (deFerias(mapaFerias, funcionarioId, q.data)) continue;
       // Turno de outra função (ex.: Caixa): tira também.
       const turno = turnoPorIdIA.get(turnoId);
       const funcao = funcaoPorId.get(funcionarioId);

@@ -284,6 +284,64 @@ insert into dias_fechados (data, motivo) values ('2026-12-25', 'Natal')
 on conflict (data) do nothing;
 
 -- ---------------------------------------------------------------------
+-- Férias (do dia "inicio" ao dia "fim"). Ninguém de férias pode ser escalado.
+-- As folgas fixas de domingo não mudam. Semana com férias não cobra o mínimo
+-- de folgas (src/lib/alertas.ts).
+-- ---------------------------------------------------------------------
+create table if not exists ferias (
+  id uuid primary key default gen_random_uuid(),
+  funcionario_id uuid not null references funcionarios (id) on delete cascade,
+  inicio date not null,
+  fim date not null,
+  criado_em timestamptz not null default now(),
+  constraint ferias_periodo_valido check (fim >= inicio and fim - inicio <= 60)
+);
+create index if not exists ferias_funcionario_idx on ferias (funcionario_id, inicio);
+alter table ferias enable row level security;
+drop policy if exists "equipe autorizada" on ferias;
+create policy "equipe autorizada" on ferias for all to authenticated
+  using (usuario_autorizado()) with check (usuario_autorizado());
+
+create or replace function de_ferias(funcionario uuid, dia date) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from ferias f where f.funcionario_id = funcionario and dia between f.inicio and f.fim
+  );
+$$;
+revoke all on function de_ferias(uuid, date) from public, anon;
+grant execute on function de_ferias(uuid, date) to authenticated;
+
+-- Férias da mesma pessoa não podem se sobrepor.
+create or replace function ferias_confere_sobreposicao() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (
+    select 1 from ferias f
+    where f.funcionario_id = new.funcionario_id and f.id <> new.id
+      and f.inicio <= new.fim and new.inicio <= f.fim
+  ) then
+    raise exception 'Já existem férias marcadas para esta pessoa nesse período.' using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+drop trigger if exists confere_sobreposicao on ferias;
+create trigger confere_sobreposicao before insert or update on ferias
+  for each row execute function ferias_confere_sobreposicao();
+
+-- O banco recusa escalar alguém de férias.
+create or replace function escalas_confere_ferias() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if de_ferias(new.funcionario_id, new.data) then
+    raise exception 'Esta pessoa está de férias neste dia.' using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+drop trigger if exists confere_ferias on escalas;
+create trigger confere_ferias before insert or update of data, funcionario_id on escalas
+  for each row execute function escalas_confere_ferias();
+
+-- ---------------------------------------------------------------------
 -- Dados de exemplo (restaurante fictício Vila Tempero)
 -- Os CPFs são fictícios e batem com a API de ponto de demonstração.
 -- ---------------------------------------------------------------------

@@ -59,6 +59,11 @@ export const CAMPOS_TURNO = "id, nome, hora_inicio, hora_fim, ordem, funcao";
 export type DiaFechado = { data: string; motivo: string };
 export const CAMPOS_DIA_FECHADO = "data, motivo";
 
+// Férias de uma pessoa (tabela ferias), do dia "inicio" ao dia "fim" ("AAAA-MM-DD").
+// Ninguém de férias pode ser escalado; as folgas fixas de domingo não mudam.
+export type Ferias = { id: string; funcionario_id: string; inicio: string; fim: string };
+export const CAMPOS_FERIAS = "id, funcionario_id, inicio, fim";
+
 export type Escala = {
   id: string;
   data: string; // "2026-11-20"

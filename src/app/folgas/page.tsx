@@ -8,11 +8,13 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
   CAMPOS_DIA_FECHADO,
+  CAMPOS_FERIAS,
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   CAMPOS_TURNO,
   type DiaFechado,
   type Escala,
+  type Ferias,
   type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
   type Turno,
@@ -45,6 +47,7 @@ import {
 } from "@/lib/folgas-domingo";
 import { buscarEscalas, escalar, escalarVarias, tirarDaEscala } from "@/lib/escalas";
 import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
+import { descreverFerias, feriasNoDia, feriasPorPessoa } from "@/lib/ferias";
 
 // Dia aberto para editar: de quem e qual dia.
 type DiaAberto = { funcionarioId: string; dia: string };
@@ -106,6 +109,9 @@ type Linha = {
   // Regra de folga fixa de domingo da pessoa (se tiver) e se ela vale neste domingo.
   regraFixa: FolgaDomingo | null;
   folgaFixaHoje: boolean;
+  // Dias de férias da pessoa nesta semana e as férias em questão (se houver).
+  diasDeFerias: Set<string>;
+  feriasDaSemana: Ferias | null;
   // Avisos de regra da pessoa nesta semana (rótulo + frase sem o nome).
   avisosDomingo: { rotulo: string; texto: string }[];
 };
@@ -121,6 +127,7 @@ export default function Folgas() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [folgasFixas, setFolgasFixas] = useState<FolgaDomingo[]>([]);
   const [diasFechados, setDiasFechados] = useState<DiaFechado[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [escalas, setEscalas] = useState<Escala[]>([]);
   const [semanaCarregada, setSemanaCarregada] = useState<string | null>(null);
@@ -150,13 +157,16 @@ export default function Folgas() {
       db.from("funcionarios").select(CAMPOS_FUNCIONARIO_ESCALA).order("nome"),
       db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
       db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
+      db.from("ferias").select(CAMPOS_FERIAS),
     ])
-      .then(([t, f, fx, df]) => {
+      .then(([t, f, fx, df, fe]) => {
         if (t.error) throw t.error;
         if (f.error) throw f.error;
         if (fx.error) throw fx.error;
         if (df.error) throw df.error;
         setDiasFechados(df.data ?? []);
+        if (fe.error) throw fe.error;
+        setFerias(fe.data ?? []);
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
         setFolgasFixas(fx.data ?? []);
@@ -256,6 +266,7 @@ export default function Folgas() {
       escalas: lista,
       folgasFixas,
       diasFechados,
+      ferias,
     });
 
   // Alertas da Escala de cada pessoa (domingo, folga fixa, dias seguidos...).
@@ -281,6 +292,7 @@ export default function Folgas() {
   // Dias com o restaurante fechado (ex.: Natal): data -> motivo. Não contam como folga.
   const motivoFechado = new Map(diasFechados.map((d) => [d.data, d.motivo]));
   const fechados = new Set(motivoFechado.keys());
+  const mapaFerias = feriasPorPessoa(ferias);
 
   const turnoPorId = new Map(turnos.map((t) => [t.id, t]));
   const linhas: Linha[] = funcionarios
@@ -294,13 +306,20 @@ export default function Folgas() {
           .filter((t): t is Turno => Boolean(t))
           .sort((a, b) => a.ordem - b.ordem),
       );
-      const folgas = diasDeFolga(dias, new Set(minhas.map((e) => e.data)), fechados);
+      // Dias de férias não são folga; semana com férias não cobra o mínimo de folgas.
+      const diasDeFerias = new Set(dias.filter((d) => feriasNoDia(mapaFerias, f.id, d)));
+      const folgas = diasDeFolga(dias, new Set(minhas.map((e) => e.data)), fechados).filter(
+        (d) => !diasDeFerias.has(d),
+      );
       const regraFixa = mapaFolgas.get(f.id) ?? null;
       return {
         funcionario: f,
         turnosPorDia,
         folgas,
-        falta: Math.max(0, minimo - folgas.length),
+        falta: diasDeFerias.size > 0 ? 0 : Math.max(0, minimo - folgas.length),
+        diasDeFerias,
+        feriasDaSemana:
+          dias.map((d) => feriasNoDia(mapaFerias, f.id, d)).find((x) => x !== null) ?? null,
         folgaNoDomingo: folgas.includes(domingo),
         regraFixa,
         folgaFixaHoje: Boolean(regraFixa && domingo && regraDaFolga(regraFixa, domingo)),
@@ -356,7 +375,12 @@ export default function Folgas() {
         continue;
       }
       const daPessoa = dias
-        .filter((d) => !fechados.has(d) && !temFolgaFixa(mapaFolgas, f.id, d))
+        .filter(
+          (d) =>
+            !fechados.has(d) &&
+            !temFolgaFixa(mapaFolgas, f.id, d) &&
+            !feriasNoDia(mapaFerias, f.id, d),
+        )
         .map((d) => ({ data: d, turno_id: turno.id, funcionario_id: f.id }));
       if (daPessoa.length > 0) pessoas++;
       novas.push(...daPessoa);
@@ -372,7 +396,7 @@ export default function Folgas() {
       return;
     }
     const pergunta = [
-      `Vai marcar ${novas.length} turnos para ${pessoas} ${pessoas === 1 ? "pessoa" : "pessoas"}, no turno padrão de cada uma (menos folgas fixas de domingo e dias fechados).`,
+      `Vai marcar ${novas.length} turnos para ${pessoas} ${pessoas === 1 ? "pessoa" : "pessoas"}, no turno padrão de cada uma (menos folgas fixas de domingo, férias e dias fechados).`,
       ...extras,
       "Confirmar?",
     ].join("\n\n");
@@ -400,6 +424,14 @@ export default function Folgas() {
     if (doDia.length > 0) return marcarFolga(f.id, dia);
     if (fechados.has(dia)) {
       setAvisoTopo({ ok: false, texto: `Restaurante fechado neste dia (${motivoFechado.get(dia)}).` });
+      return;
+    }
+    const feriasDoDia = feriasNoDia(mapaFerias, f.id, dia);
+    if (feriasDoDia) {
+      setAvisoTopo({
+        ok: false,
+        texto: `${f.nome.split(/\s+/)[0]} está de férias ${descreverFerias(feriasDoDia)}.`,
+      });
       return;
     }
     if (temFolgaFixa(mapaFolgas, f.id, dia)) {
@@ -570,6 +602,7 @@ export default function Folgas() {
           escalas={escalas}
           folgaFixa={temFolgaFixa(mapaFolgas, pessoaAberta.id, aberto.dia)}
           fechado={motivoFechado.get(aberto.dia) ?? null}
+          feriasDia={feriasNoDia(mapaFerias, pessoaAberta.id, aberto.dia)}
           regraFixa={mapaFolgas.get(pessoaAberta.id) ?? null}
           alertasAtuais={alertasAtuais}
           alertasPara={alertasPara}
@@ -599,8 +632,18 @@ function CartaoFolgas({
   desabilitado: boolean;
   onAbrirDia: (dia: string) => void;
 }) {
-  const { funcionario, turnosPorDia, folgas, falta, folgaNoDomingo, regraFixa, folgaFixaHoje, avisosDomingo } =
-    linha;
+  const {
+    funcionario,
+    turnosPorDia,
+    folgas,
+    falta,
+    folgaNoDomingo,
+    regraFixa,
+    folgaFixaHoje,
+    diasDeFerias,
+    feriasDaSemana,
+    avisosDomingo,
+  } = linha;
   const qtd = folgas.length;
   return (
     <li className={`cartao space-y-3 ${falta > 0 ? "border-red-300 bg-red-50! shadow-none!" : ""}`}>
@@ -627,7 +670,9 @@ function CartaoFolgas({
           const folga = turnosDoDia.length === 0;
           const ehDomingo = i === 0;
           const fechado = folga && fechados.has(dia);
+          // A folga fixa de domingo continua valendo mesmo nas férias (aparece como "Fixa").
           const fixa = !fechado && ehDomingo && folga && folgaFixaHoje;
+          const emFerias = folga && !fechado && !fixa && diasDeFerias.has(dia);
           const nomeDia = DIAS_SEMANA_CURTO[paraData(dia).getDay()];
           return (
             <li key={dia} className="min-w-0">
@@ -640,6 +685,8 @@ function CartaoFolgas({
                     ? "restaurante fechado"
                     : fixa
                     ? "folga fixa"
+                    : emFerias
+                    ? "férias"
                     : folga
                     ? "folga"
                     : turnosDoDia.map((t) => t.nome).join(" e ")
@@ -647,6 +694,8 @@ function CartaoFolgas({
                 className={`flex min-h-[64px] w-full flex-col items-center rounded-md border px-0 py-1 text-center active:scale-95 ${
                   fechado
                     ? "border-neutral-300 bg-neutral-100 text-neutral-500"
+                    : emFerias
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
                     : folga
                     ? "border-green-400 bg-green-50 text-green-900"
                     : "border-neutral-200 bg-white text-neutral-700"
@@ -659,6 +708,8 @@ function CartaoFolgas({
                   ? "Fech."
                   : fixa
                   ? "Fixa"
+                  : emFerias
+                  ? "Férias"
                   : folga
                   ? "Folga"
                   : turnosDoDia.map((t) => (
@@ -686,6 +737,12 @@ function CartaoFolgas({
         {regraFixa && (
           <p className="text-neutral-600">Folga fixa: {descreverFolgaFixa(regraFixa)}</p>
         )}
+        {feriasDaSemana && (
+          <p className="font-semibold text-sky-800">
+            De férias {descreverFerias(feriasDaSemana)} (nesta semana não se cobra o mínimo de
+            folgas)
+          </p>
+        )}
         {avisosDomingo.map((a) => (
           <p key={a.texto} className="font-semibold text-red-800">
             ⚠ {a.rotulo}: {a.texto}
@@ -708,6 +765,7 @@ function EditarDia({
   escalas,
   folgaFixa,
   fechado,
+  feriasDia,
   regraFixa,
   alertasAtuais,
   alertasPara,
@@ -725,6 +783,8 @@ function EditarDia({
   folgaFixa: boolean;
   // Motivo, se o restaurante estiver fechado neste dia (ex.: "Natal").
   fechado: string | null;
+  // Férias da pessoa que incluem este dia (se houver).
+  feriasDia: Ferias | null;
   regraFixa: FolgaDomingo | null;
   alertasAtuais: Alerta[];
   alertasPara: (lista: Escala[]) => { alertas: Alerta[] };
@@ -776,6 +836,8 @@ function EditarDia({
             {pessoa.funcao} ·{" "}
             {fechado
               ? "restaurante fechado"
+              : feriasDia
+              ? "de férias"
               : ehFolga
               ? "de folga neste dia"
               : "trabalhando neste dia"}
@@ -789,6 +851,13 @@ function EditarDia({
               <span className="block text-sm">
                 Ninguém é escalado, e o dia não conta como folga.
               </span>
+            </p>
+          )}
+
+          {feriasDia && (
+            <p className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sky-900">
+              <strong>De férias {descreverFerias(feriasDia)}.</strong>
+              <span className="block text-sm">Não pode ser escalado(a) neste dia.</span>
             </p>
           )}
 
@@ -814,7 +883,7 @@ function EditarDia({
             if (!daPessoa && !marcado) return null;
             const travado = (folgaFixa || Boolean(fechado)) && !marcado;
             // Dia fechado: não mostra os turnos (a não ser um que já esteja marcado, para tirar).
-            if (fechado && !marcado) return null;
+            if ((fechado || feriasDia) && !marcado) return null;
             // Mínimo da função da pessoa neste turno.
             const regra = regraDoQuadro(REGRAS, turno, dia);
             const daFuncao = regra?.funcoes.find(
@@ -877,7 +946,7 @@ function EditarDia({
             );
           })}
 
-          {!fechado && (
+          {!fechado && !feriasDia && (
           <button
             type="button"
             aria-pressed={ehFolga}

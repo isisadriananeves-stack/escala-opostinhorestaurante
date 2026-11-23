@@ -4,11 +4,13 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
   CAMPOS_DIA_FECHADO,
+  CAMPOS_FERIAS,
   CAMPOS_FOLGA_DOMINGO,
   CAMPOS_FUNCIONARIO_ESCALA,
   CAMPOS_TURNO,
   type DiaFechado,
   type Escala,
+  type Ferias,
   type FolgaDomingo,
   type FuncionarioEscala as Funcionario,
   type RespostaSugestao,
@@ -38,6 +40,7 @@ import {
 import { descreverFolgaFixa, folgasPorPessoa, temFolgaFixa } from "@/lib/folgas-domingo";
 import { buscarEscalas, escalar, tirarDaEscala } from "@/lib/escalas";
 import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
+import { descreverFerias, feriasNoDia, feriasPorPessoa } from "@/lib/ferias";
 
 // Célula aberta para escolher quem trabalha.
 type CelulaAberta = { data: string; turno: Turno };
@@ -94,6 +97,7 @@ export default function EscalaDaSemana() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [folgasFixas, setFolgasFixas] = useState<FolgaDomingo[]>([]);
   const [diasFechados, setDiasFechados] = useState<DiaFechado[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [escalas, setEscalas] = useState<Escala[]>([]);
   const [semanaCarregada, setSemanaCarregada] = useState<string | null>(null);
@@ -123,7 +127,7 @@ export default function EscalaDaSemana() {
     async function carregarCadastros() {
       try {
         const db = supabase();
-        const [t, f, fx, df] = await Promise.all([
+        const [t, f, fx, df, fe] = await Promise.all([
           db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
           db
             .from("funcionarios")
@@ -132,12 +136,15 @@ export default function EscalaDaSemana() {
             .order("nome"),
           db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
           db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
+          db.from("ferias").select(CAMPOS_FERIAS),
         ]);
         if (t.error) throw t.error;
         if (f.error) throw f.error;
         if (fx.error) throw fx.error;
         if (df.error) throw df.error;
         setDiasFechados(df.data ?? []);
+        if (fe.error) throw fe.error;
+        setFerias(fe.data ?? []);
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
         setFolgasFixas(fx.data ?? []);
@@ -281,6 +288,7 @@ export default function EscalaDaSemana() {
           escalas,
           folgasFixas,
           diasFechados,
+          ferias,
         })
       : null;
 
@@ -496,6 +504,7 @@ export default function EscalaDaSemana() {
           escalados={escaladosNa(celula.data, celula.turno.id)}
           turnos={turnos}
           folgasFixas={folgasFixas}
+          ferias={ferias}
           alertas={resultado?.porCelula.get(chaveCelula(celula.data, celula.turno.id)) ?? []}
           salvandoId={salvandoId}
           erro={erro}
@@ -513,6 +522,7 @@ export default function EscalaDaSemana() {
           escalasAtuais={escalas}
           folgasFixas={folgasFixas}
           diasFechados={diasFechados}
+          ferias={ferias}
           salvando={salvandoProposta}
           erro={erroProposta}
           onAprovar={aprovarProposta}
@@ -578,6 +588,7 @@ function EscolherEquipe({
   escalados,
   turnos,
   folgasFixas,
+  ferias,
   alertas,
   salvandoId,
   erro,
@@ -589,6 +600,7 @@ function EscolherEquipe({
   escalados: Funcionario[];
   turnos: Turno[];
   folgasFixas: FolgaDomingo[];
+  ferias: Ferias[];
   alertas: Alerta[];
   salvandoId: string | null;
   erro: string | null;
@@ -599,9 +611,14 @@ function EscolherEquipe({
   // Mostra os ativos e também quem está desativado mas já estava escalado aqui,
   // para poder tirar da escala.
   // Turno com função própria (ex.: Caixa): só aparece quem pode trabalhar nele.
+  // Quem está de férias no dia não aparece (a não ser que já esteja marcado, para tirar).
+  const mapaFerias = feriasPorPessoa(ferias);
   const lista = funcionarios.filter(
     (f) =>
-      (f.ativo && podeTrabalharNoTurno(f.funcao, celula.turno, turnos)) || idsEscalados.has(f.id),
+      (f.ativo &&
+        podeTrabalharNoTurno(f.funcao, celula.turno, turnos) &&
+        !feriasNoDia(mapaFerias, f.id, celula.data)) ||
+      idsEscalados.has(f.id),
   );
   const regra = regraDoQuadro(REGRAS, celula.turno, celula.data);
   const contagem = regra ? conferirMinimo(regra, escalados) : [];
@@ -713,6 +730,13 @@ function EscolherEquipe({
                       )}
                     </span>
                     <span className="block text-sm text-neutral-600">{f.funcao}</span>
+                    {marcado && feriasNoDia(mapaFerias, f.id, celula.data) && (
+                      <span className="block text-sm font-semibold text-red-700">
+                        ⚠ De férias{" "}
+                        {descreverFerias(feriasNoDia(mapaFerias, f.id, celula.data)!)}: toque para
+                        tirar
+                      </span>
+                    )}
                     {marcado && !podeTrabalharNoTurno(f.funcao, celula.turno, turnos) && (
                       <span className="block text-sm font-semibold text-red-700">
                         ⚠ Não é deste turno ({motivoDoTurno(f.funcao, celula.turno)}): toque para

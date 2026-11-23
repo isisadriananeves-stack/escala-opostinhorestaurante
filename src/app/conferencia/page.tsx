@@ -4,10 +4,12 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { supabase, variaveisConfiguradas } from "@/lib/supabase";
 import {
   CAMPOS_DIA_FECHADO,
+  CAMPOS_FERIAS,
   CAMPOS_FUNCIONARIO_CONFERENCIA,
   CAMPOS_TURNO,
   type DiaFechado,
   type Escala,
+  type Ferias,
   type FuncionarioConferencia as Funcionario,
   type RespostaMarcacoes,
   type Turno,
@@ -86,6 +88,7 @@ export default function ConferenciaDoDia() {
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [diasFechados, setDiasFechados] = useState<DiaFechado[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
   const [cadastrosCarregados, setCadastrosCarregados] = useState(false);
   const [dados, setDados] = useState<DadosDoDia | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -96,15 +99,18 @@ export default function ConferenciaDoDia() {
     async function carregar() {
       try {
         const db = supabase();
-        const [t, f, df] = await Promise.all([
+        const [t, f, df, fe] = await Promise.all([
           db.from("turnos").select(CAMPOS_TURNO).order("ordem"),
           db.from("funcionarios").select(CAMPOS_FUNCIONARIO_CONFERENCIA).order("nome"),
           db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
+          db.from("ferias").select(CAMPOS_FERIAS),
         ]);
         if (t.error) throw t.error;
         if (f.error) throw f.error;
         if (df.error) throw df.error;
         setDiasFechados(df.data ?? []);
+        if (fe.error) throw fe.error;
+        setFerias(fe.data ?? []);
         setTurnos(t.data ?? []);
         setFuncionarios(f.data ?? []);
       } catch (e) {
@@ -317,6 +323,15 @@ export default function ConferenciaDoDia() {
                     {funcionario && (
                       <p className="text-sm text-neutral-600">{funcionario.funcao}</p>
                     )}
+                    {funcionario &&
+                      data &&
+                      ferias.some(
+                        (x) => x.funcionario_id === funcionario.id && x.inicio <= data && data <= x.fim,
+                      ) && (
+                        <p className="text-sm font-semibold text-sky-800">
+                          Estava de férias neste dia.
+                        </p>
+                      )}
                     <HorariosReais
                       entrada={marcacao.entrada}
                       saida={marcacao.saida}
