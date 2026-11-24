@@ -1,9 +1,16 @@
 // Identidade visual do restaurante (estilo vintage e limpo).
-// Para aplicar a sua: troque o nome e as cores abaixo e coloque o arquivo
-// public/logo.png (ou deixe logo como null para mostrar só o nome).
+// As duas unidades usam as mesmas cores e o mesmo logo (public/logo.png);
+// só o nome muda, conforme a unidade do site (src/config/unidade.ts).
+
+import { UNIDADE } from "@/config/unidade";
+
+const NOMES = {
+  "vila-galvao": "O Postinho - Vila Galvão",
+  centro: "O Postinho - Centro",
+} as const;
 
 export const identidade = {
-  nome: "O Postinho Restaurante",
+  nome: NOMES[UNIDADE],
   // Vermelho-escuro: cabeçalho, botões, títulos e bordas (formato #RRGGBB)
   corPrincipal: "#8B1A1A",
   // Bege claro: fundo das páginas

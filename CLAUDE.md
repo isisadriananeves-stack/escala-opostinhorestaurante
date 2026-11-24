@@ -11,6 +11,9 @@ sem formação técnica, com ajuda da IA. Leia este arquivo antes de qualquer ta
   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` ou o nome antigo `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
 - Tipos das tabelas em `src/lib/tipos.ts`; funções de data em `src/lib/datas.ts`.
 - Identidade visual (nome, cores, logo) em `src/config/identidade.ts`; menu em `src/config/menu.ts`.
+- Duas unidades, um site cada na Vercel com o mesmo código e bancos separados: Vila Galvão e Centro.
+  A variável `NEXT_PUBLIC_UNIDADE` (`vila-galvao` ou `centro`, em `src/config/unidade.ts`) escolhe
+  o nome (`identidade.ts`) e as regras (`regras.ts`). Mudança de banco vale para os dois bancos.
 - Layout com cabeçalho e menu em `src/app/layout.tsx` e `src/components/Cabecalho.tsx`.
 - Classes CSS prontas em `src/app/globals.css`: `.botao`, `.botao-secundario`, `.campo`, `.cartao`.
 - Documentação da API de ponto em `docs/api-ponto.md` e dados de exemplo em `docs/marcacoes-exemplo.json`.

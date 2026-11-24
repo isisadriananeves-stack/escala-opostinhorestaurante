@@ -1,10 +1,14 @@
 // Regras da casa usadas nos alertas da tela "Escala da semana".
+// Cada unidade tem as suas (veja o fim do arquivo); hoje as duas são iguais,
+// mudando só o início das escalas e as semanas modelo.
 //
 // Para mudar uma regra, troque os números ou os textos abaixo.
 // Dias da semana: 0 = domingo, 1 = segunda ... 6 = sábado.
 // Nomes de turno e de função são comparados sem diferenciar maiúsculas
 // e acentos ("salao" = "Salão"), mas precisam ser os mesmos usados no
 // cadastro de turnos e na tela Equipe.
+
+import { UNIDADE } from "@/config/unidade";
 
 export const TODOS_OS_DIAS = [0, 1, 2, 3, 4, 5, 6];
 export const SEGUNDA_A_SEXTA = [1, 2, 3, 4, 5];
@@ -32,7 +36,8 @@ export type RegrasDaCasa = {
   // Semanas montadas à mão que servem de modelo para a sugestão com IA:
   // cada pessoa só é sugerida nos turnos em que trabalhou nelas, e a IA tenta
   // repetir os costumes (dias de folga, quem trabalha junto).
-  semanasModelo: { inicio: string; fim: string };
+  // null = nenhuma ainda (a IA só segue as regras).
+  semanasModelo: { inicio: string; fim: string } | null;
   minimos: RegraDeMinimo[];
   // Dias sem nenhum turno na semana (domingo a sábado).
   folgasPorSemana: number;
@@ -60,7 +65,7 @@ export type RegrasDaCasa = {
   };
 };
 
-export const REGRAS: RegrasDaCasa = {
+const REGRAS_VILA_GALVAO: RegrasDaCasa = {
   inicioDasEscalas: "2026-12-13",
   semanasModelo: { inicio: "2026-12-13", fim: "2027-01-02" },
   minimos: [
@@ -124,3 +129,12 @@ export const REGRAS: RegrasDaCasa = {
     horaExtraMinutos: 30,
   },
 };
+
+// Unidade Centro: mesmas regras, escalas a partir de 29/11/2026, ainda sem semanas modelo.
+const REGRAS_CENTRO: RegrasDaCasa = {
+  ...REGRAS_VILA_GALVAO,
+  inicioDasEscalas: "2026-11-29",
+  semanasModelo: null,
+};
+
+export const REGRAS: RegrasDaCasa = UNIDADE === "centro" ? REGRAS_CENTRO : REGRAS_VILA_GALVAO;

@@ -24,6 +24,7 @@ import { podeTrabalharNoTurno } from "@/lib/turnos";
 import { deFerias, descreverFerias, feriasPorPessoa } from "@/lib/ferias";
 import {
   costumesDoModelo,
+  type Costume,
   nomesDosDias as diasDeCostume,
   respeitarTurnosDoModelo,
   turnosDoModelo,
@@ -173,12 +174,14 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
   const mapaFerias = feriasPorPessoa(ferias);
   const modelo = regras.semanasModelo;
   const turnosPorPessoa = turnosDoModelo(escalasModelo);
-  const costumes = costumesDoModelo(
-    escalasModelo,
-    modelo.inicio,
-    modelo.fim,
-    new Set(diasFechados.map((d) => d.data)),
-  );
+  const costumes = modelo
+    ? costumesDoModelo(
+        escalasModelo,
+        modelo.inicio,
+        modelo.fim,
+        new Set(diasFechados.map((d) => d.data)),
+      )
+    : new Map<string, Costume>();
   const motivoFechado = new Map(diasFechados.map((d) => [d.data, d.motivo]));
   const dias = diasDaSemana(inicioSemana);
   const diasSet = new Set(dias);
@@ -279,7 +282,9 @@ export async function sugerirEscala(pedido: PedidoSugestao): Promise<SugestaoIA>
       return linhas.length > 0 ? linhas.join("\n") : "(ninguém nesta semana)";
     })(),
     "",
-    `SEMANAS MODELO (montadas à mão, de ${diaMes(modelo.inicio)} a ${diaMes(modelo.fim)}): turno de cada pessoa (obrigatório) e costumes:`,
+    modelo
+      ? `SEMANAS MODELO (montadas à mão, de ${diaMes(modelo.inicio)} a ${diaMes(modelo.fim)}): turno de cada pessoa (obrigatório) e costumes:`
+      : "SEMANAS MODELO: nenhuma ainda. Todas as pessoas podem ir em qualquer turno da sua função:",
     ...funcionarios.map((f) => {
       const codigo = codigoPessoa.get(f.id);
       const permitidos = turnosPorPessoa.get(f.id);

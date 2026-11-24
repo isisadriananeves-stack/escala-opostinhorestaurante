@@ -76,11 +76,13 @@ export async function POST(request: Request) {
       login.db.from("folgas_domingo").select(CAMPOS_FOLGA_DOMINGO),
       login.db.from("dias_fechados").select(CAMPOS_DIA_FECHADO),
       // Semanas modelo (montadas à mão): turno de cada pessoa e costumes.
-      login.db
-        .from("escalas")
-        .select("id, data, turno_id, funcionario_id")
-        .gte("data", modelo.inicio)
-        .lte("data", modelo.fim),
+      modelo
+        ? login.db
+            .from("escalas")
+            .select("id, data, turno_id, funcionario_id")
+            .gte("data", modelo.inicio)
+            .lte("data", modelo.fim)
+        : Promise.resolve({ data: [] as Escala[], error: null }),
       login.db.from("ferias").select(CAMPOS_FERIAS),
     ]);
     if (t.error) throw t.error;

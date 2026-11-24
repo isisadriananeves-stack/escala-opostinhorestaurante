@@ -176,6 +176,10 @@ export default function ConferenciaDoDia() {
   const futuro = Boolean(data && hoje && data > hoje);
   // Antes do início das escalas, não há escala para cobrar: as batidas são só informação.
   const antesDasEscalas = Boolean(data && data < REGRAS.inicioDasEscalas);
+  // A conta do Pontomais é a mesma das duas unidades: batidas de quem não está
+  // cadastrado neste site são da outra unidade e ficam de fora.
+  const naoEscalados = resultado ? resultado.naoEscalados.filter((n) => n.funcionario) : [];
+  const deFora = resultado ? resultado.naoEscalados.length - naoEscalados.length : 0;
 
   return (
     <div className="space-y-4">
@@ -301,11 +305,10 @@ export default function ConferenciaDoDia() {
             </section>
           )}
 
-          {resultado && resultado.naoEscalados.length > 0 && (
+          {naoEscalados.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-xl">
-                {antesDasEscalas ? "Batidas de ponto" : "Não escalados"} (
-                {resultado.naoEscalados.length})
+                {antesDasEscalas ? "Batidas de ponto" : "Não escalados"} ({naoEscalados.length})
               </h2>
               <p className="text-sm text-neutral-600">
                 {antesDasEscalas
@@ -313,7 +316,7 @@ export default function ConferenciaDoDia() {
                   : "Bateram ponto, mas não estavam na escala deste dia."}
               </p>
               <ul className="space-y-3">
-                {resultado.naoEscalados.map(({ funcionario, marcacao }) => (
+                {naoEscalados.map(({ funcionario, marcacao }) => (
                   <li key={funcionario?.id ?? `sem-cadastro-${marcacao.cpfFinal}`} className="cartao">
                     <p className="titulo text-lg" style={{ color: "var(--cor-principal)" }}>
                       {funcionario
@@ -342,6 +345,13 @@ export default function ConferenciaDoDia() {
                 ))}
               </ul>
             </section>
+          )}
+
+          {deFora > 0 && (
+            <p className="text-center text-sm text-neutral-500">
+              {deFora} {deFora === 1 ? "batida de ponto" : "batidas de ponto"} de pessoas que não estão
+              no cadastro desta unidade {deFora === 1 ? "ficou" : "ficaram"} de fora.
+            </p>
           )}
 
           {ponto && (
