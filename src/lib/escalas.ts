@@ -23,6 +23,17 @@ export async function buscarEscalas(inicioSemana: string): Promise<Escala[]> {
   return data ?? [];
 }
 
+/** Escalas entre duas datas (inclusive). */
+export async function buscarEscalasEntre(inicio: string, fim: string): Promise<Escala[]> {
+  const { data, error } = await supabase()
+    .from("escalas")
+    .select(CAMPOS_ESCALA)
+    .gte("data", inicio)
+    .lte("data", fim);
+  if (error) throw error;
+  return data ?? [];
+}
+
 /** Põe a pessoa no turno do dia. Devolve a escala criada. */
 export async function escalar(
   funcionarioId: string,

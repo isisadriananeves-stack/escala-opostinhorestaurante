@@ -48,6 +48,7 @@ import {
 import { buscarEscalas, escalar, escalarVarias, tirarDaEscala } from "@/lib/escalas";
 import { motivoDoTurno, podeTrabalharNoTurno } from "@/lib/turnos";
 import { descreverFerias, feriasNoDia, feriasPorPessoa } from "@/lib/ferias";
+import { FolgasDoMes } from "@/components/FolgasDoMes";
 
 // Dia aberto para editar: de quem e qual dia.
 type DiaAberto = { funcionarioId: string; dia: string };
@@ -120,6 +121,8 @@ export default function Folgas() {
   const semVariaveis = !variaveisConfiguradas();
   const hoje = useHoje();
   const [deslocamento, setDeslocamento] = useState(0);
+  // "semana" = tela de montar a semana; "mes" = quantas folgas cada um teve no mês.
+  const [visao, setVisao] = useState<"semana" | "mes">("semana");
   // Antes do início das escalas (REGRAS.inicioDasEscalas), abre na primeira semana com escala.
   const inicioSemana = hoje ? semanaMostrada(hoje, deslocamento) : null;
 
@@ -455,12 +458,52 @@ export default function Folgas() {
     ? `${diaMes(inicioSemana)} a ${diaMes(somarDias(inicioSemana, 6))}`
     : "";
 
+  const escolherVisao = (
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Ver por">
+      {(["semana", "mes"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={visao === v}
+          className={`${visao === v ? "botao" : "botao-secundario"} px-2 py-2!`}
+          onClick={() => {
+            setVisao(v);
+            fecharJanela();
+          }}
+        >
+          {v === "semana" ? "Semana" : "Mês"}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (visao === "mes") {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold">Folgas do mês</h1>
+        {escolherVisao}
+        {!cadastrosCarregados || !hoje ? (
+          <p className="text-neutral-600">Carregando...</p>
+        ) : (
+          <FolgasDoMes
+            hoje={hoje}
+            funcionarios={funcionarios}
+            ferias={ferias}
+            diasFechados={diasFechados}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold">Folgas da semana</h1>
         <p className="text-lg text-neutral-700">{tituloSemana}</p>
       </div>
+
+      {escolherVisao}
 
       <div className="grid grid-cols-3 gap-2">
         <button
